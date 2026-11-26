@@ -189,11 +189,10 @@ test('createRemoteTelemetryBridge runs in-memory worker over child stdio, tolera
   });
 
   try {
-    const [remoteState, remoteSubagents, remoteDash, remoteSearch] = await Promise.all([
+    const [remoteState, remoteSubagents, remoteDash] = await Promise.all([
       bridge.state('homelab', { conversationId: 'conv-main' }),
       bridge.subagents('homelab', { conversationIds: ['sub-1', 'missing-sub'] }),
-      bridge.dashboard('homelab', { force: true }),
-      bridge.search('homelab', { query: 'homelab', excludeIds: ['sub-1'] })
+      bridge.dashboard('homelab', { force: true })
     ]);
 
     assert.equal(spawnCalls.length, 1);
@@ -214,8 +213,6 @@ test('createRemoteTelemetryBridge runs in-memory worker over child stdio, tolera
     assert.equal(remoteSubagents.sessions['sub-1'].conversationId, 'sub-1');
     assert.equal(remoteSubagents.sessions['missing-sub'].conversationId, '');
     assert.equal(remoteDash.totalRequests, 2);
-    assert.equal(remoteSearch.results.length, 1);
-    assert.equal(remoteSearch.results[0].conversationId, 'conv-main');
   } finally {
     await bridge.close();
   }
@@ -239,14 +236,9 @@ test('createRemoteTelemetryBridge runs in-memory worker over child stdio, tolera
     }
   });
   try {
-    const [mergedDash, appOnlySearch] = await Promise.all([
-      cliBridge.dashboard('homelab', { force: true }),
-      cliBridge.search('homelab', { query: 'prompt' })
-    ]);
+    const mergedDash = await cliBridge.dashboard('homelab', { force: true });
     assert.equal(mergedDash.totalRequests, 2);
     assert.deepEqual(new Set(mergedDash.requests.map(r => r.conversationId)), new Set(['remote-app-conv', 'remote-cli-conv']));
-    assert.equal(appOnlySearch.results.length, 1);
-    assert.equal(appOnlySearch.results[0].conversationId, 'remote-app-conv');
   } finally {
     await cliBridge.close();
   }

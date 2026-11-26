@@ -1,38 +1,63 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
-import {startNativeIntegration,declaredNativeNames,isSwarmTarget,swarmI18nSource} from '../lib/native-host.mjs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { startNativeIntegration, declaredNativeNames } from '../lib/native-host.mjs';
 
-test('same window reattaches after an updater changes the origin or debug endpoint',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'agy-recovery-')),portFile=join(directory,'port');
-  writeFileSync(portFile,'12345\n');
-  const originalFetch=globalThis.fetch,clients=[],origins=[];
-  let target={id:'same-window',type:'page',title:'Conversation - Antigravity',url:'https://127.0.0.1:5000/c/a',webSocketDebuggerUrl:'ws://127.0.0.1:12345/devtools/page/a'};
-  globalThis.fetch=async()=>({json:async()=>[target]});
+test('same window reattaches after an updater changes the origin or debug endpoint', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'agy-recovery-')), portFile = join(directory, 'port');
+  writeFileSync(portFile, '12345\n');
+  const originalFetch = globalThis.fetch, clients = [], origins = [];
+  let target = { id: 'same-window', type: 'page', title: 'Conversation - Antigravity', url: 'https://127.0.0.1:5000/c/a', webSocketDebuggerUrl: 'ws://127.0.0.1:12345/devtools/page/a' };
+  globalThis.fetch = async () => ({ json: async () => [target] });
   let stop;
-  try{
-    stop=startNativeIntegration({portFile,parseSessionData:()=>({}),onStatus:()=>{},discover:async origin=>{origins.push(origin);return ['sampleNativeName'];},connect:async endpoint=>{
-      const client={endpoint,closed:false,calls:[],onEvent(){},socket:{addEventListener(){},close(){client.closed=true;}},async send(method,params){this.calls.push({method,params});if(method==='Page.getFrameTree')return{frameTree:{frame:{id:'frame'}}};if(method==='Page.addScriptToEvaluateOnNewDocument')return{identifier:'script'};return{result:{value:false}};}};
-      clients.push(client);return client;
-    }});
+  try {
+    stop = startNativeIntegration({
+      portFile,
+      parseSessionData: () => ({}),
+      onStatus: () => {},
+      discover: async origin => { origins.push(origin); return ['sampleNativeName']; },
+      connect: async endpoint => {
+        const client = {
+          endpoint,
+          closed: false,
+          calls: [],
+          onEvent() {},
+          socket: { addEventListener() {}, close() { client.closed = true; } },
+          async send(method, params) {
+            this.calls.push({ method, params });
+            if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame' } } };
+            if (method === 'Page.addScriptToEvaluateOnNewDocument') return { identifier: 'script' };
+            return { result: { value: false } };
+          }
+        };
+        clients.push(client);
+        return client;
+      }
+    });
     await stop.ready;
-    assert.equal(clients.length,1);
-    target={...target,url:'https://127.0.0.1:6000/c/a'};
+    assert.equal(clients.length, 1);
+    target = { ...target, url: 'https://127.0.0.1:6000/c/a' };
     await stop.check();
-    assert.equal(clients.length,2);assert.equal(clients[0].closed,true);
-    assert.deepEqual(origins,['https://127.0.0.1:5000','https://127.0.0.1:6000']);
-    target={...target,webSocketDebuggerUrl:'ws://127.0.0.1:12345/devtools/page/b'};
+    assert.equal(clients.length, 2);
+    assert.equal(clients[0].closed, true);
+    assert.deepEqual(origins, ['https://127.0.0.1:5000', 'https://127.0.0.1:6000']);
+    target = { ...target, webSocketDebuggerUrl: 'ws://127.0.0.1:12345/devtools/page/b' };
     await stop.check();
-    assert.equal(clients.length,3);assert.equal(clients[1].closed,true);
-    for(const client of clients)assert.ok(client.calls.some(c=>c.method==='Page.addScriptToEvaluateOnNewDocument'));
-  }finally{await stop?.();globalThis.fetch=originalFetch;rmSync(directory,{recursive:true,force:true});}
+    assert.equal(clients.length, 3);
+    assert.equal(clients[1].closed, true);
+    for (const client of clients) assert.ok(client.calls.some(c => c.method === 'Page.addScriptToEvaluateOnNewDocument'));
+  } finally {
+    await stop?.();
+    globalThis.fetch = originalFetch;
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
-test('component discovery includes lexical declarations without executing bundle text',()=>{
-  const source='var Alpha=1;const Beta=2,Gamma=3;let Delta=4;globalThis.sideEffect();';
-  assert.deepEqual(declaredNativeNames(source),['Alpha','Beta','Gamma','Delta']);
+test('component discovery includes lexical declarations without executing bundle text', () => {
+  const source = 'var Alpha=1;const Beta=2,Gamma=3;let Delta=4;globalThis.sideEffect();';
+  assert.deepEqual(declaredNativeNames(source), ['Alpha', 'Beta', 'Gamma', 'Delta']);
 });
 
 test('onMissingDebugPort triggers on missing/refused port before connection, ignores transient timeouts, and stops after debug port is ready', async () => {
@@ -116,23 +141,15 @@ test('onMissingDebugPort triggers on missing/refused port before connection, ign
   }
 });
 
-test('isSwarmTarget and startNativeIntegration localize Swarm plugin iframes and dispose cleanly', async () => {
-  assert.equal(isSwarmTarget({ type: 'iframe', url: 'plugin://swarm--swarm_board-123/index.html' }), true);
-  assert.equal(isSwarmTarget({ type: 'page', url: 'plugin://swarm--swarm_board-123/index.html' }), false);
-  assert.equal(isSwarmTarget({ type: 'iframe', url: 'https://127.0.0.1:5000/c/a' }), false);
-  const src = swarmI18nSource({ enabled: true, language: 'zh-TW' });
-  assert.doesNotThrow(() => new Function(src));
-  assert.ok(src.includes('"language":"zh-TW"'));
-
-  const dir = mkdtempSync(join(tmpdir(), 'agy-swarm-i18n-'));
+test('startNativeIntegration degrades gracefully and still injects Powertools when bundle discovery fails or /main.js is renamed', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agy-discover-degraded-'));
   const portFile = join(dir, 'port');
   writeFileSync(portFile, '12345\n');
   const originalFetch = globalThis.fetch;
-  const swarmClientCalls = [];
-  let swarmClosed = false;
+  const calls = [];
   globalThis.fetch = async () => ({
     json: async () => [
-      { id: 'swarm-1', type: 'iframe', title: 'Swarm', url: 'plugin://swarm--swarm_board-abc/index.html', webSocketDebuggerUrl: 'ws://127.0.0.1:12345/devtools/page/swarm-1' }
+      { id: 'win-1', type: 'page', title: 'Antigravity', url: 'https://127.0.0.1:5000/c/conv-1', webSocketDebuggerUrl: 'ws://127.0.0.1:12345/devtools/page/win-1' }
     ]
   });
   let stop;
@@ -141,23 +158,24 @@ test('isSwarmTarget and startNativeIntegration localize Swarm plugin iframes and
       portFile,
       parseSessionData: () => ({}),
       onStatus: () => {},
+      discover: async () => { throw new Error('HTTP 404 Not Found: /main.js'); },
       connect: async () => ({
         onEvent() {},
-        socket: { addEventListener() {}, close() { swarmClosed = true; } },
+        socket: { addEventListener() {}, close() {} },
         async send(method, params) {
-          swarmClientCalls.push({ method, params });
-          if (method === 'Page.addScriptToEvaluateOnNewDocument') return { identifier: 'swarm-script-1' };
-          return { result: { value: { ready: true, lang: 'zh-CN' } } };
+          calls.push({ method, params });
+          if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame-1' } } };
+          if (method === 'Page.addScriptToEvaluateOnNewDocument') return { identifier: 'script-1' };
+          return { result: { value: { healthy: true, nativeComponents: false } } };
         }
       })
     });
     await stop.ready;
-    assert.ok(swarmClientCalls.some(c => c.method === 'Runtime.evaluate' && String(c.params?.expression || '').includes('__agyLocalization')));
-    await stop();
-    assert.equal(swarmClosed, true);
-    assert.ok(swarmClientCalls.some(c => c.method === 'Runtime.evaluate' && c.params?.expression === 'globalThis.__agyLocalization?.dispose()'));
-    assert.ok(swarmClientCalls.some(c => c.method === 'Page.removeScriptToEvaluateOnNewDocument' && c.params?.identifier === 'swarm-script-1'));
+    const injected = calls.find(c => c.method === 'Page.addScriptToEvaluateOnNewDocument');
+    assert.ok(injected, 'Powertools bootstrap must still be injected when discover() fails');
+    assert.ok(String(injected.params?.source || '').includes('__agyResolveNativeBindings([])'));
   } finally {
+    await stop?.();
     globalThis.fetch = originalFetch;
     rmSync(dir, { recursive: true, force: true });
   }

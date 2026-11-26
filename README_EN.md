@@ -1,14 +1,14 @@
 <div align="center">
   <img src="assets/logo.svg" width="72" height="72" alt="Agy Powertools Logo" />
   <h1>Agy Powertools</h1>
-  <p><strong>Native enhancement plugin for Antigravity 2.0</strong></p>
-  <p>Multilingual UI, context &amp; usage stats, compact layout, session branching &amp; editing, multi-account switching, no-TUN proxy, SSH &amp; WSL2 support</p>
+  <p><strong>Upgrade-resilient native enhancement plugin for Antigravity 2.0</strong></p>
+  <p>Context &amp; speed telemetry, usage &amp; request dashboard, compact layout &amp; stage updates, session branching &amp; inline editing, file context menu &amp; utilities, SSH &amp; WSL2 support</p>
   <!-- plugin-badges:start -->
   <p>
-    <a href="https://github.com/WhiteBr1ck/agy-powertools/releases"><img src="https://img.shields.io/github/v/release/WhiteBr1ck/agy-powertools?label=Release&color=2563eb" height="20" alt="Release" /></a>
-    <a href="https://github.com/WhiteBr1ck/agy-powertools/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/WhiteBr1ck/agy-powertools/ci.yml?label=CI" height="20" alt="CI" /></a>
-    <a href="LICENSE"><img src="https://img.shields.io/github/license/WhiteBr1ck/agy-powertools?label=License&color=16a34a" height="20" alt="MIT License" /></a>
-    <img src="https://img.shields.io/badge/Antigravity-2.35.0-0f172a" height="20" alt="Antigravity 2.35.0" />
+    <a href="https://github.com/Mr47hsy/agy-powertools/releases"><img src="https://img.shields.io/github/v/release/Mr47hsy/agy-powertools?label=Release&color=2563eb" height="20" alt="Release" /></a>
+    <a href="https://github.com/Mr47hsy/agy-powertools/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Mr47hsy/agy-powertools/ci.yml?label=CI" height="20" alt="CI" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/Mr47hsy/agy-powertools?label=License&color=16a34a" height="20" alt="MIT License" /></a>
+    <img src="https://img.shields.io/badge/Antigravity-2.x%20Adaptive-0f172a" height="20" alt="Antigravity 2.x Adaptive" />
     <img src="https://img.shields.io/badge/Node.js-%3E%3D22.13-339933" height="20" alt="Node.js >= 22.13" />
     <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20WSL2-475569" height="20" alt="Platform" />
   </p>
@@ -18,7 +18,7 @@
     <strong>English</strong>
   </p>
   <p>
-    <a href="#screenshots">Screenshots</a> |
+    <a href="#upgrade-resilience">Upgrade Resilience</a> |
     <a href="#features">Features</a> |
     <a href="#installation">Installation</a> |
     <a href="#configuration">Configuration</a> |
@@ -30,94 +30,28 @@
   <img src="docs/images/hero-workspace.png" alt="Agy Powertools workspace" width="100%" />
 </p>
 
-> Attaches to Antigravity 2.0 over the local debugging interface and reads local SQLite and JSONL session files in read-only mode. It does not patch client installation files or open external web pages.
+> Attaches to Antigravity 2.0 over the local debugging interface and reads local SQLite and JSONL session files in read-only mode. It never patches client installation files or mutates native client UI text, and includes self-contained UI/protocol fallbacks and cross-platform cold-start shortcut recovery so core features keep working across Antigravity client updates.
 
 ---
 
-## Screenshots
+## Upgrade Resilience
 
-<table>
-  <tr>
-    <th width="50%">Context Window &amp; Speed Stats</th>
-    <th width="50%">Overview Task Progress &amp; Quota</th>
-  </tr>
-  <tr>
-    <td>
-      <img src="docs/images/card-composer.png" alt="Context window and speed stats" width="100%" />
-      <p>Check context usage, cache reuse, and generation speed next to the model selector, with an optional perimeter quota ring around the composer.</p>
-    </td>
-    <td>
-      <img src="docs/images/card-overview-panel.png" alt="Overview task progress and quota" width="100%" />
-      <p>Track live execution steps, per-step durations, and remaining model quotas in the right Overview panel; click section headers to collapse.</p>
-    </td>
-  </tr>
-  <tr>
-    <th>Usage Overview (Light)</th>
-    <th>Usage Overview (Dark)</th>
-  </tr>
-  <tr>
-    <td>
-      <img src="docs/images/card-dashboard-light.png" alt="Usage overview in light theme" width="100%" />
-      <p>Defaults to the current weekly quota cycle, displaying request counts, tokens, cache hit rate, estimated cost, a 53-week heatmap, and model health.</p>
-    </td>
-    <td>
-      <img src="docs/images/card-dashboard-dark.png" alt="Usage overview in dark theme" width="100%" />
-      <p>Follows the client light and dark themes, comparing token share, cost share, cache hit rate, and speed across models.</p>
-    </td>
-  </tr>
-  <tr>
-    <th>Requests &amp; Cache Anomalies</th>
-    <th>Multi-Account &amp; Quota Manager (Off by default)</th>
-  </tr>
-  <tr>
-    <td>
-      <img src="docs/images/card-requests.png" alt="Request events and cache anomalies" width="100%" />
-      <p>Filter requests by account, model, conversation, and status, and flag short-interval cache drops while ignoring cold starts and compactions.</p>
-    </td>
-    <td>
-      <img src="docs/images/card-accounts.png" alt="Multi-account switching and quota management" width="100%" />
-      <p>Store and switch multiple Google accounts locally via OS native keyrings, with 5-hour and weekly quota views in one place.</p>
-    </td>
-  </tr>
-  <tr>
-    <th>Language &amp; Display Settings</th>
-    <th>No-TUN Proxy (Off by default)</th>
-  </tr>
-  <tr>
-    <td>
-      <img src="docs/images/card-settings.png" alt="Language and display settings" width="100%" />
-      <p>Switch between Simplified Chinese, Traditional Chinese, and English, and toggle compact layout, user bubble tint, and quota halo window.</p>
-    </td>
-    <td>
-      <img src="docs/images/card-proxy.png" alt="No-TUN application proxy settings" width="100%" />
-      <p>Route only Antigravity through HTTP or SOCKS5 with built-in connectivity checks, Force HTTP/1.1, and in-app update verification.</p>
-    </td>
-  </tr>
-</table>
+- **Zero-hard-dependency UI & protocol fallbacks**: When an Antigravity update renames or refactors minified UI primitives (Popover, Select, Button, Switch, Toast, or Protobuf/Lexical helpers), Powertools no longer throws compatibility errors—instead switching compound groups atomically to self-contained React + CSS-variable fallback components.
+- **Adaptive routing & multi-tier DOM anchors**: Dynamically discovers TanStack Router parent layouts and falls back to a full-pane Standalone Overlay (`Powertools`) if client routing changes incompatibly. Sidebar navigation, composer context rings, inline message edit buttons, reply toolbars, and conversation menus all feature multi-tier DOM fallback selectors.
+- **Cross-platform cold-start auto-recovery**: Client updates often overwrite desktop/Start-menu shortcuts and strip `--remote-debugging-port=0`. On Windows, macOS, Linux, and WSL2 local desktops, the sidecar automatically heals shortcuts and relaunches once with debugging enabled (protected by session deduplication, a 120s cooldown, a 2-attempt circuit breaker, and a fresh-install grace period).
+- **Fault-isolated telemetry readers**: The wire-level Protobuf reader skips unknown fields, wire-type 3/4 groups, and truncated trailing bytes; SQLite queries isolate `gen_metadata` and `steps` independently and fall back cleanly to JSONL transcripts.
+- **Non-invasive localization**: Translates only Powertools' own UI (`简体中文` / `繁體中文` / `English`) without walking or mutating Antigravity's native DOM text.
 
 ---
 
 ## Features
 
-- **Multilingual UI (`English` / `简体中文` / `繁體中文`)**: Localizes Powertools panels, common Antigravity menus, permission dialogs, settings, and Swarm iframes while leaving chat text and code blocks untouched.
-- **Context and speed telemetry**: Adds a context usage ring (with cache reuse, compaction count, and Orchestrator planner/executor bars) and a speed dial (`tok/s`, TTFT, model vs. tool duration, and estimated session cost) next to the composer, including subagent stats.
-- **Local usage and request dashboard**: Adds a `Powertools` sidebar page combining Desktop and `agy` CLI usage, with usage overview (53-week heatmap, token/cost donuts, model table), per-request log, short-interval cache anomaly flags, one-click error copy, quota estimates, and official API pricing refresh.
-- **Compact layout and live stage updates**: Keeps your client font size while tightening line height and block spacing; reports short progress updates during multi-step tool runs and folds them into the top duration header once finished.
-- **Session branching and inline editing**: Fork a new chat from any reply or conversation menu with full history preserved (including chats that used subagents), or edit a sent message in place using Antigravity's native composer.
-- **Multi-account switching (off by default)**: Uses Windows Credential Manager, macOS Keychain, or Linux Secret Service to keep multiple Google accounts isolated without plaintext tokens; check 5-hour/weekly quotas and switch from the sidebar, with optional auto-switch on depletion.
-- **No-TUN application proxy (off by default)**: Injects proxy flags and environment variables for Antigravity alone on relaunch, with HTTP CONNECT / SOCKS5 testing, cold-start prompts, and optional `GODEBUG=http2client=0` to reduce `EOF` disconnects.
-- **SSH remote and WSL2 support**: Reads remote session, subagent, and dashboard metrics in desktop `SSH` windows over local OpenSSH without installing anything on the server; supports Windows Antigravity with built-in WSL2 backends across NAT and Mirrored networking, hybrid credential storage, and relaunch delegation.
-- **File context menu and small utilities**: Right-click file links or Files tree entries to attach to chat, open, reveal in folder, copy the file, or copy its path (including LAN NAS / SMB paths on Windows); adds collapsible Overview Task Progress and Quota panels, titlebar unread counts, optional composer quota ring, and optional user bubble tint.
-
----
-
-## Useless Features (But Cool)
-
-<p align="center">
-  <img src="docs/images/card-border-beam.webp" alt="Working composer border beam preview" width="100%" />
-</p>
-
-- **Working composer border beam (off by default)**: Inspired by [border-beam-ios](https://github.com/ismnoiet/border-beam-ios), powered by a lightweight rounded-rectangle SDF WebGL shader. Glides a smooth comet and soft inner glow at constant speed around the composer while the agent is working, then fades out to zero idle CPU/GPU cost once the turn finishes. Cross-fades seamlessly with the Composer Quota Halo when both are enabled, and includes 6 palettes (`Gemini`, `Aurora`, `Colorful`, `Neon`, `Accent`, `Quota`) plus a live **Try preview** button in Settings.
+1. **Context and speed telemetry**: View context window usage (cache reuse, compaction count, and Orchestrator planner/executor split) and generation speed (`tok/s`, TTFT, model vs. tool duration, and estimated session cost) next to the composer, including subagent stats.
+2. **Local usage and request dashboard**: Adds a `Powertools` sidebar page combining Desktop and `agy` CLI usage, featuring usage overview (53-week heatmap, model distribution, reference cost), per-request log, short-interval cache-drop highlights, one-click error copy, quota estimation, and official API pricing refresh.
+3. **Compact layout and live stage updates**: Preserves client font size while tightening body line height (`1.4`) and block spacing; communicates brief progress updates during consecutive tool calls and folds them into the top duration bar on completion.
+4. **Session branching and inline editing**: Branch a new session from any historical reply or sidebar session menu with full history preserved (including sessions with subagents), or edit and resend messages directly in place.
+5. **File context menu and practical utilities**: Right-click file links in messages or entries in the right file tree to attach to chat, open / open with, reveal in folder, copy file, or copy path (including LAN NAS / SMB paths on Windows); adds collapsible Overview Task Progress & Quota sections, window title unread counts, optional composer quota halo border, and user message bubble tint.
+6. **SSH remote and WSL2 support**: Reads remote session, subagent, and usage metrics directly in desktop `SSH` windows over OpenSSH without installing plugins on the server; automatically bridges cross-OS CDP (NAT & Mirrored), multi-account credentials, and relaunch when Windows Antigravity runs in built-in WSL2 mode.
 
 ---
 
@@ -129,13 +63,13 @@
 
 Send this prompt to Antigravity or another local coding agent:
 
-> Please install Agy Powertools from https://github.com/WhiteBr1ck/agy-powertools . Read README_EN.md and docs/INSTALL_AGENT.md first, and run the unified installer provided by the project using local Node.js or Antigravity's bundled runtime. Keep all other plugins, account settings, and chat history intact, and do not force-close the running client. Verify the installed version afterward and remind me if a client restart is needed.
+> Please install Agy Powertools from https://github.com/Mr47hsy/agy-powertools . Read README_EN.md and docs/INSTALL_AGENT.md first, and run the unified installer provided by the project using local Node.js or Antigravity's bundled runtime. Keep all other plugins, account settings, and chat history intact, and do not force-close the running client. Verify the installed version afterward and remind me if a client restart is needed.
 
 See [Agent installation guide](docs/INSTALL_AGENT.md) for details.
 
 ### Option 2: Command line
 
-Download and extract the latest ZIP from [Releases](https://github.com/WhiteBr1ck/agy-powertools/releases) (or clone this repository), then run:
+Download and extract the latest ZIP from [Releases](https://github.com/Mr47hsy/agy-powertools/releases) (or clone this repository), then run:
 
 ```powershell
 # Windows (PowerShell)
@@ -147,10 +81,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 sh ./install.sh
 ```
 
-Reinstalling keeps your saved settings and does not force-close Antigravity. Restart Antigravity once you finish your current task; **Powertools** will appear in the left sidebar. On macOS, no duplicate `.app` launcher is created: opening the original `Antigravity.app` automatically relaunches once with the debug flag when needed (with built-in loop protection, and a toggle in Settings or Plugins -> Powertools to switch to manual restart anytime).
+Reinstalling keeps your saved settings and does not force-close Antigravity. Restart Antigravity once you finish your current task; **Powertools** will appear in the left sidebar. Whenever Antigravity is opened without the debug port (for instance right after a client update overwrites shortcuts), Powertools automatically repairs shortcuts and relaunches once with debugging enabled (configurable anytime in Settings or Plugins -> Powertools).
 
-### Updates and uninstall
+### Releases, in-app updates, and uninstall
 
+- **GitHub Releases workflow**: Push a `v*` tag (e.g. `git tag v2.17.0 && git push origin v2.17.0`) or trigger the `Release` GitHub Actions workflow manually to run tests and publish `.bundle.gz`, `.sha256`, and `.zip` assets automatically.
 - **In-app updates**: Go to **Powertools -> Settings -> About -> Check for updates** and click **Install update**. Packages are SHA-256 verified and roll back automatically if startup fails.
 - **Uninstall**: Run `powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1` (Windows) or `sh ./uninstall.sh` (macOS / Linux / WSL2). Append `--keep-settings` to keep your preferences. Native chat history, accounts, and other plugins are untouched.
 
@@ -168,48 +103,38 @@ Every setting applies live in **Powertools -> Settings** and saves automatically
 | Setting | Default | Description |
 | --- | --- | --- |
 | Enable Powertools | On | Master switch; pauses all UI enhancements while keeping saved settings |
-| Language | `简体中文` | Choose `简体中文`, `繁體中文`, or `English` |
-| Local font and weight | Client defaults | Search by localized or family name and select to apply. Weight can be set independently. Reset restores both defaults. The built-in terminal uses its client font |
+| Language | `简体中文` | Controls Powertools' own UI language (`简体中文`, `繁體中文`, or `English`) without mutating native client UI text |
 | Compact layout | On | Tightens line height (`1.4`), block spacing, and tool rows while keeping client font size |
 | Tint user message bubbles | Off | Adds a tint and border to user messages (Accent, 5 presets, custom color, and 10%-100% blend slider) |
 | Always show conversation outline | On | Keeps the turn navigation rail visible in multi-turn chats |
 | Keep Overview open when switching chats | On | Preserves the right Overview panel open state across conversations |
-| Conversations per project | `Default (6)` | Controls visible chats per project in the sidebar (`Default (6)`, `1-10`, or `Show all`) |
-| Drop folders onto the sidebar | On | Create or open projects by dropping local folders onto the sidebar in a local window |
-| Pin dropped projects | Off | Pin projects created or opened by dropping folders |
-| Sidebar running border beam | Off | Draws an SVG comet that follows the rounded perimeter of running sidebar chats (follows composer palette by default or picks its own, optional hide native four-dot spinner and Live preview; amber alert on waiting) |
-| Sidebar running conversations group | Off | Pins a collapsible Running section at the top of the sidebar showing all active chats, projects, active subagents, and waiting-for-confirmation alerts; hides when idle |
 | Taskbar unread badge | On | Shows `(N)` unread count in the window and taskbar title when background chats finish |
+| Cold-start auto-relaunch | On | Automatically repairs shortcuts and relaunches once with `--remote-debugging-port=0` when opened without debugging enabled (local windows only) |
 
 ### Telemetry & progress
 
 | Setting | Default | Description |
 | --- | --- | --- |
 | Default Overview range | `Current weekly quota` | Choose weekly quota cycle, Today, 24h, Yesterday, This week, This month, 30d, or All time |
+| Pricing basis | `Standard` | Calculate reference costs using official standard or promo API pricing |
 | Context ring | On | Shows context usage ring, cache reuse breakdown, and Orchestrator per-model bars |
 | Speed & statistics | On | Shows the speed dial and opens session telemetry and estimated cost |
 | Task progress | On | Collapsible Overview section with checklist progress, live phase, and step durations |
 | Show quota in Overview | Off | Collapsible Overview section showing 5-hour and weekly remaining quotas |
-| Titlebar quick overview | Off | Adds a top-right titlebar Powertools trigger to open the full 6-tab popover over your current chat |
 | Composer quota halo | Off | Draws remaining quota clockwise around the composer card (emerald, amber, or red) |
 | Quota halo window | `Auto (lower)` | Choose `Auto (lower)`, `Weekly limit`, or `5-hour limit` when the halo is enabled |
-| Working composer border beam | Off | Animates a smooth border beam around the composer while working (zero idle cost), transitions cleanly with the quota halo, with 6 palettes and Live preview |
 | Subagent context & telemetry | On | Shows per-subagent model, context usage, tokens, cache hit rate, speed, and cost |
 | Turn duration / Expand tools | On | Shows total duration on finished turns and expands tool details on click |
-| Turn footer telemetry | Off | Displays per-turn model, cache hit rate, input/output tokens and estimated cost in finished reply footers with full breakdown on hover |
+| Turn footer telemetry | Off | Displays per-turn model, cache hit rate, input/output tokens and estimated cost in finished reply footers |
 
-### Enhancements, Accounts, Proxy & Experimental Context
+### Session enhancements, context menus & multi-account
 
 | Setting | Default | Description |
 | --- | --- | --- |
 | Stage updates | On | Reports brief progress updates during tool runs and folds them on completion |
-| Parallel search & read | Off | Guides the agent to batch file searches and reads in one turn |
-| Full-text search in native picker | On | Extends the native conversation search modal to search message bodies, code blocks, and commands, jumping straight to the matched turn |
 | Branching / Message edit / File menu | On | Native session branching, inline message editing, and local/NAS/Files tree context menu (with dynamic Open With apps and `#L:C` jump) |
 | Recognize pasted SSH commands | On | Extracts `user@host:port` when pasting `ssh -p PORT user@host` into Create New Project -> SSH Host (discards appended passwords) |
-| Enable multi-account switching | Off | Opt-in with risk notice; sidebar switcher, list/card views, 5H/weekly toggle, and auto-switch |
-| Application proxy (no TUN) | Off | Protocol/host/port fields, connectivity checks, cold-start prompt, and Force HTTP/1.1 |
-| Context target (Experimental) | `Default` | Choose `Default`, `256K`, `500K`, or `1M` (`Default` leaves native settings unchanged) |
+| Enable multi-account switching | Off | Opt-in with risk notice; supports desktop & WSL2 credential isolation, sidebar switcher, 5H/weekly toggle, and auto-switch |
 
 ### Environment variables & paths
 

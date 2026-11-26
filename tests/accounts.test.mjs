@@ -1347,192 +1347,6 @@ test('Quotas and AccountSwitcher fuse live active data, fix header identity drif
   assert.equal(driftUi.collectText(driftedAcct1Row).includes('35%'), false);
 });
 
-test('QuickPopover reuses full panels across all 6 tabs with lazy loading, badge guards, tab memory, and zero middle dots', async () => {
-  const now = Date.now();
-  const dashboardLoads = [];
-  let proxyLoads = 0;
-  const openedTabs = [];
-  const sampleDashboard = {
-    activeAccountEmail: 'alice@example.com',
-    accountEmails: ['alice@example.com'],
-    pricing: { rates: [{ model: 'gemini-4-neon', input: 2, output: 12, cache: 0.2 }] },
-    requests: [
-      { id: 'r1', timestampMs: now - 3600_000, model: 'Gemini 4 Neon', inputTokens: 1000, cacheReadTokens: 3000, outputTokens: 500, costUsd: 0.12, status: 'success', tps: 42, ttftMs: 1200, cacheHitPercent: 75, conversationId: 'conv-1', accountEmail: 'alice@example.com' }
-    ],
-    errors: [
-      { id: 'e1', timestampMs: now - 3200_000, model: 'Claude Sonnet 4', error: 'HTTP 429 rate limited', status: 'error', conversationId: 'conv-1', accountEmail: 'alice@example.com' }
-    ]
-  };
-  const accountsData = {
-    activeId: 'acct-1',
-    accounts: [{
-      id: 'acct-1',
-      email: 'alice@example.com',
-      name: 'Alice Chen',
-      tier: { id: 'g1-ultra-tier', name: 'Google AI Ultra' },
-      disabled: false,
-      hasCredential: true,
-      groups: [
-        { displayName: 'Gemini Models', buckets: [{ bucketId: 'g-5h', window: '5h', remainingFraction: 0.82, resetTimeMs: now + 3600_000 }] },
-        { displayName: 'Claude and GPT models', buckets: [{ bucketId: 'c-5h', window: '5h', remainingFraction: 0.18, resetTimeMs: now + 3600_000 }] },
-        { displayName: 'Disabled Pool', buckets: [{ bucketId: 'd-5h', window: '5h', disabled: true, remainingFraction: 0.01, resetTimeMs: now + 3600_000 }] }
-      ]
-    }]
-  };
-
-  const ui = createPanelHarness(
-    accountsData,
-    { enabled: true, titlebarQuickPanel: true, multiAccount: true, overviewRange: '24h' },
-    {
-      dashboard: sampleDashboard,
-      proxyStatus: () => ({ reason: 'active', mismatch: false }),
-      onLoadDashboard: force => dashboardLoads.push(force),
-      onLoadProxyStatus: () => { proxyLoads++; },
-      onOpenManagementTab: tab => openedTabs.push(tab)
-    }
-  );
-
-  // Settings exposes single titlebarQuickPanel toggle (no redundant mode/custom settings) and composerWorkingBeam (default off, hides palette row)
-  const settingsTree = ui.renderSettings();
-  assert.ok(ui.find(settingsTree, 'agy-setting-titlebarQuickPanel'));
-  assert.equal(ui.find(settingsTree, 'agy-setting-row-titlebarQuickPanelMode'), null);
-  assert.ok(ui.find(settingsTree, 'agy-setting-composerWorkingBeam'));
-  assert.equal(ui.find(settingsTree, 'agy-setting-row-composerWorkingBeamPalette'), null);
-  let previewOn = false;
-  const beamUi = createPanelHarness(
-    accountsData,
-    { enabled: true, composerWorkingBeam: true, composerWorkingBeamPalette: 'aurora' },
-    { beamPreview: () => previewOn, onSetBeamPreview: v => { previewOn = Boolean(v); } }
-  );
-  const beamSettings = beamUi.renderSettings();
-  assert.ok(beamUi.find(beamSettings, 'agy-setting-row-composerWorkingBeamPalette'));
-  assert.equal(beamUi.find(beamSettings, 'agy-beam-palette-aurora')?.props?.['aria-pressed'], true);
-  const previewBtn = beamUi.find(beamSettings, 'agy-beam-preview-toggle');
-  assert.ok(previewBtn);
-  assert.equal(previewBtn.props['aria-pressed'], false);
-  previewBtn.props.onClick();
-  assert.equal(previewOn, true);
-  assert.equal(beamUi.find(beamUi.renderSettings(), 'agy-beam-preview-toggle')?.props?.['aria-pressed'], true);
-
-  // Closed by default: zero lazy loads; ignores disabled 1% bucket, warns on 18% active bucket and shows multiline tooltip + first-time alert callout
-  let tree = ui.renderQuickPopover();
-  const trigger = ui.find(tree, 'agy-titlebar-quick-trigger');
-  assert.ok(trigger);
-  assert.equal(ui.find(tree, 'agy-quick-trigger-badge')?.props?.['data-tone'], 'warning');
-  assert.equal(trigger.props['aria-label'], 'Powertools 快捷概览（低额度：Claude/GPT 5h 18%）');
-  const tipNode = ui.find(tree, 'agy-quick-trigger-tooltip');
-  assert.ok(tipNode);
-  const tipRows = ui.findAll(tipNode, n => n.props?.className === 'pt-qp-tip-row');
-  assert.equal(tipRows.length, 1);
-  assert.equal(tipRows[0].props['data-tone'], 'warning');
-  assert.equal(ui.collectText(tipRows[0]).trim(), '低额度：Claude/GPT 5h 18%');
-  assert.ok(ui.find(tree, 'agy-quick-alert-callout'));
-  assert.equal(ui.find(tree, 'agy-quick-popover'), null);
-  assert.equal(dashboardLoads.length, 0);
-  assert.equal(proxyLoads, 0);
-
-  // Clicking "我知道了" hides both the callout and the corner dot for the current alert event
-  ui.find(tree, 'agy-quick-alert-ack').props.onClick();
-  tree = ui.renderQuickPopover();
-  assert.equal(ui.find(tree, 'agy-quick-alert-callout'), null);
-  assert.equal(ui.find(tree, 'agy-quick-trigger-badge'), null);
-  assert.ok(ui.find(tree, 'agy-quick-trigger-tooltip'));
-
-  // Multiline tooltip covers critical + warning + pending proxy and "不再提醒" mutes until restored in Settings
-  const critProxyUi = createPanelHarness(
-    {
-      activeId: 'acct-1',
-      accounts: [{
-        id: 'acct-1',
-        email: 'alice@example.com',
-        name: 'Alice Chen',
-        groups: [
-          { displayName: 'Gemini Models', buckets: [{ bucketId: 'g-5h', window: '5h', remainingFraction: 0.06 }] },
-          { displayName: 'Claude and GPT models', buckets: [{ bucketId: 'c-w', window: 'weekly', remainingFraction: 0.19 }] }
-        ]
-      }]
-    },
-    { enabled: true, titlebarQuickPanel: true, language: 'zh-CN' },
-    { proxyStatus: () => ({ reason: 'not-applied', mismatch: true }) }
-  );
-  let critTree = critProxyUi.renderQuickPopover();
-  assert.equal(critProxyUi.find(critTree, 'agy-quick-trigger-badge')?.props?.['data-tone'], 'critical');
-  assert.ok(critProxyUi.find(critTree, 'agy-quick-alert-callout'));
-  const critTipBox = critProxyUi.find(critTree, 'agy-quick-trigger-tooltip');
-  const critRows = critProxyUi.findAll(critTipBox, n => n.props?.className === 'pt-qp-tip-row');
-  assert.deepEqual(
-    critRows.map(r => [r.props['data-tone'], critProxyUi.collectText(r).trim()]),
-    [
-      ['critical', '额度告急：Gemini 5h 6%'],
-      ['warning', '低额度：Claude/GPT 周 19%'],
-      ['warning', '独立代理待重启生效']
-    ]
-  );
-  const critText = critProxyUi.collectText(critTipBox);
-  for (const forbidden of ['\u00b7', '\u2022', '\u2027', '\u30fb']) assert.equal(critText.includes(forbidden), false);
-  assert.equal(critProxyUi.find(critProxyUi.renderSettings(), 'agy-setting-row-quickBadgeMuted'), null);
-  critProxyUi.find(critTree, 'agy-quick-alert-mute').props.onClick();
-  critTree = critProxyUi.renderQuickPopover();
-  assert.equal(critProxyUi.find(critTree, 'agy-quick-alert-callout'), null);
-  assert.equal(critProxyUi.find(critTree, 'agy-quick-trigger-badge'), null);
-  const unmuteBtn = critProxyUi.find(critProxyUi.renderSettings(), 'agy-quick-badge-unmute');
-  assert.ok(unmuteBtn);
-  unmuteBtn.props.onClick();
-  critTree = critProxyUi.renderQuickPopover();
-  assert.equal(critProxyUi.find(critTree, 'agy-quick-trigger-badge')?.props?.['data-tone'], 'critical');
-  assert.ok(critProxyUi.find(critTree, 'agy-quick-alert-callout'));
-
-  const healthyUi = createPanelHarness(
-    { activeId: 'acct-1', accounts: [{ id: 'acct-1', email: 'alice@example.com', groups: [{ displayName: 'Gemini Models', buckets: [{ bucketId: 'g-5h', window: '5h', remainingFraction: 0.9 }] }] }] },
-    { enabled: true, titlebarQuickPanel: true, language: 'zh-CN' },
-    { proxyStatus: () => ({ reason: 'disabled', mismatch: false }) }
-  );
-  const healthyTree = healthyUi.renderQuickPopover();
-  assert.equal(healthyUi.find(healthyTree, 'agy-quick-trigger-badge'), null);
-  assert.equal(healthyUi.find(healthyTree, 'agy-quick-alert-callout'), null);
-  assert.equal(healthyUi.find(healthyTree, 'agy-quick-trigger-tooltip'), null);
-  assert.equal(healthyUi.find(healthyTree, 'agy-titlebar-quick-trigger')?.props?.['aria-label'], 'Powertools 快捷概览');
-
-  // Open -> lazy loads once; all 6 full native components render cleanly with zero middle dots
-  trigger.props.onClick();
-  assert.deepEqual(dashboardLoads, [false]);
-  assert.equal(proxyLoads, 1);
-
-  tree = ui.renderQuickPopover();
-  assert.ok(ui.find(tree, 'agy-usage-heatmap'));
-  for (const [tabKey, expectedTestId] of [
-    ['overview', 'agy-usage-heatmap'],
-    ['requests', 'agy-requests-table'],
-    ['errors', 'agy-errors-table'],
-    ['quota', 'agy-accounts-overview'],
-    ['pricing', 'agy-price-table'],
-    ['settings', 'agy-about-version']
-  ]) {
-    ui.find(ui.renderQuickPopover(), `agy-quick-tab-${tabKey}`).props.onClick();
-    const pop = ui.find(ui.renderQuickPopover(), 'agy-quick-popover');
-    assert.ok(ui.find(pop, expectedTestId), `Expected ${expectedTestId} inside QuickPopover tab ${tabKey}`);
-    const tabText = ui.collectText(pop);
-    for (const forbidden of ['\u00b7', '\u2022', '\u2027', '\u30fb']) {
-      assert.equal(tabText.includes(forbidden), false, `Forbidden middle dot in tab ${tabKey}`);
-    }
-  }
-
-  // Manual refresh + open full page remembers active tab ('settings')
-  await ui.find(ui.renderQuickPopover(), 'agy-quick-refresh').props.onClick();
-  assert.deepEqual(dashboardLoads, [false, true]);
-  ui.find(ui.renderQuickPopover(), 'agy-quick-open-full').props.onClick();
-  assert.deepEqual(openedTabs, ['settings']);
-  assert.equal(ui.find(ui.renderQuickPopover(), 'agy-quick-popover'), null);
-
-  // Reopen restores last tab ('settings')
-  ui.find(ui.renderQuickPopover(), 'agy-titlebar-quick-trigger').props.onClick();
-  assert.ok(ui.find(ui.renderQuickPopover(), 'agy-about-version'));
-
-  // Disabled toggle renders null
-  const offUi = createPanelHarness(accountsData, { enabled: true, titlebarQuickPanel: false });
-  assert.equal(offUi.renderQuickPopover(), null);
-});
-
 test('Pricing provides standard vs API promo basis switch, clean single-row rates, promo expiry badge, and Overview/Settings integration without middle dots', () => {
   const changes = [];
   const futureUntil = '2099-12-01';
@@ -1875,38 +1689,19 @@ test('createAccountsStore tracks onboarding acceptance from app_storage.json and
   }
 });
 
-test('快捷浮窗内的字体弹层搜索、重新读取及 Escape 不关闭外层', () => {
-  let nestedOpen = true;
-  const ui = createPanelHarness(null, { multiAccount: false }, {
-    Popover: props => ({ type: 'popover', props, children: props.children }),
-    querySelector: selector => nestedOpen && selector.includes('[data-testid="agy-font-picker"]') ? {} : null
-  });
-  const popover = ui.findAll(ui.renderQuickPopover(), node => node.type === 'popover')[0];
-  popover.props.onOpenChange(true);
-  for (const type of ['pointerdown', 'keydown']) {
-    let canceled = false;
-    popover.props.onOpenChange(false, { event: { type, key: 'Escape', target: { closest: () => null } }, cancel: () => { canceled = true; } });
-    assert.equal(canceled, true);
-    assert.equal(ui.findAll(ui.renderQuickPopover(), node => node.type === 'popover')[0].props.open, true);
-  }
-  nestedOpen = false;
-  popover.props.onOpenChange(false, { event: { target: { closest: () => null } } });
-  assert.equal(ui.findAll(ui.renderQuickPopover(), node => node.type === 'popover')[0].props.open, false);
-});
-
-test('Sidebar badge, QuickPopover info dot, and About toggles reflect discovered updates cleanly without middle dots (Issue #45)', () => {
+test('Sidebar badge and About toggles reflect discovered updates cleanly without middle dots (Issue #45)', () => {
   const changes = [];
   let openedUpdateSettings = 0;
   const ui = createPanelHarness(
     { activeId: 'a1', accounts: [{ id: 'a1', email: 'alice@example.com', groups: [] }] },
-    { enabled: true, titlebarQuickPanel: true, autoCheckUpdates: true, autoInstallUpdates: false, language: 'zh-CN' },
+    { enabled: true, autoCheckUpdates: true, autoInstallUpdates: false, language: 'zh-CN' },
     {
       onChange: p => changes.push(p),
       onOpenUpdateSettings: () => openedUpdateSettings++,
       updateNotice: {
         status: 'available',
         version: '2.17.0',
-        releaseUrl: 'https://github.com/WhiteBr1ck/agy-powertools/releases/tag/v2.17.0',
+        releaseUrl: 'https://github.com/Mr47hsy/agy-powertools/releases/tag/v2.17.0',
         notes: '## 中文说明\n- **新功能**：自动检查更新',
         canInstall: true,
         dismissedVersion: ''
@@ -1924,15 +1719,7 @@ test('Sidebar badge, QuickPopover info dot, and About toggles reflect discovered
   assert.equal(stopped, true);
   assert.equal(openedUpdateSettings, 1);
 
-  // 2. QuickPopover displays calm info dot (no top-right callout banner) with update tooltip row
-  const qpTree = ui.renderQuickPopover();
-  const qpDot = ui.find(qpTree, 'agy-quick-trigger-badge');
-  assert.ok(qpDot);
-  assert.equal(qpDot.props['data-tone'], 'info');
-  assert.equal(ui.find(qpTree, 'agy-quick-alert-callout'), null);
-  assert.ok(ui.collectText(ui.find(qpTree, 'agy-quick-trigger-tooltip')).includes('发现新版本 v2.17.0'));
-
-  // 3. About pre-populates discovered release, install button, release notes, and update switches
+  // 2. About pre-populates discovered release, install button, release notes, and update switches
   const aboutTree = ui.renderAbout();
   assert.ok(ui.find(aboutTree, 'agy-install-update'));
   assert.ok(ui.collectText(ui.find(aboutTree, 'agy-install-update')).includes('更新至 v2.17.0'));
@@ -1944,14 +1731,13 @@ test('Sidebar badge, QuickPopover info dot, and About toggles reflect discovered
     assert.equal(ui.collectText(aboutTree).includes(forbidden), false);
   }
 
-  // 4. Dismissed version hides Sidebar badge and QuickPopover info dot
+  // 3. Dismissed version hides Sidebar badge
   const dismissedUi = createPanelHarness(
     { activeId: 'a1', accounts: [{ id: 'a1', email: 'alice@example.com', groups: [] }] },
-    { enabled: true, titlebarQuickPanel: true, autoCheckUpdates: true, language: 'zh-CN' },
+    { enabled: true, autoCheckUpdates: true, language: 'zh-CN' },
     {
       updateNotice: { status: 'available', version: '2.17.0', canInstall: true, dismissedVersion: '2.17.0' }
     }
   );
   assert.equal(dismissedUi.find(dismissedUi.renderSidebar(), 'agy-sidebar-update-badge'), null);
-  assert.equal(dismissedUi.find(dismissedUi.renderQuickPopover(), 'agy-quick-trigger-badge'), null);
 });
