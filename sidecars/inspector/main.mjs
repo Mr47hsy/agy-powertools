@@ -6,8 +6,7 @@ import { startNativeIntegration } from '../../lib/native-host.mjs';
 import { serveRuntime } from '../../lib/runtime-control.mjs';
 import { installationPaths } from '../../lib/lifecycle.mjs';
 import { createSettingsStore, DEFAULT_SETTINGS } from '../../lib/settings.mjs';
-import { configureLaunchers, createColdStartRelaunchCoordinator, isRemoteSshEnvironment, manualLaunchCommand, maybePromptPostUpdateRelaunch, recordDebugPortReady, recordProxyReady, scheduleRelaunchWithDebugPort } from '../../lib/launcher.mjs';
-import { checkProxyPortOpen, inspectProxyRuntime } from '../../lib/proxy.mjs';
+import { configureLaunchers, createColdStartRelaunchCoordinator, isRemoteSshEnvironment, manualLaunchCommand, maybePromptPostUpdateRelaunch, recordDebugPortReady, scheduleRelaunchWithDebugPort } from '../../lib/launcher.mjs';
 import { startSidecarWebUi } from '../../lib/sidecar-ui.mjs';
 import { checkForUpdates } from '../../lib/updates.mjs';
 import { startUpdate, updateStatus } from '../../lib/update-manager.mjs';
@@ -31,37 +30,9 @@ if (isDirectRun) {
   let missingPortPolls = 0, shortcutsHealed = false, everConnectedDebugPort = false;
   const relaunchCoordinator = createColdStartRelaunchCoordinator({
     dataDir: paths.data,
-    home: paths.home,
-    checkPort: checkProxyPortOpen
+    installDir: paths.installed,
+    home: paths.home
   });
-  // Cold-start proxy auto-relaunch (non-TUN mode): runs locally before renderer/network mount,
-  // with short retries if the local proxy client is still starting up on boot.
-  const proxyRetryTimers = [];
-  if (!remoteSsh) {
-    const bootSettings = settings.get();
-    const bootProxy = inspectProxyRuntime(bootSettings, process.env);
-    if (bootProxy.reason === 'active') {
-      try { recordProxyReady({ dataDir: paths.data }); } catch {}
-    } else if (bootSettings.enabled !== false && bootProxy.configured && bootProxy.reason === 'not-applied') {
-      const attemptBootProxy = async (attempt = 0) => {
-        const cur = settings.get();
-        const runtime = inspectProxyRuntime(cur, process.env);
-        if (cur.enabled === false || !runtime.configured || runtime.reason !== 'not-applied') return;
-        const res = await relaunchCoordinator.attemptProxy({
-          enabled: cur.enabled !== false,
-          proxyEnabled: cur.proxyEnabled,
-          proxyUrl: cur.proxyUrl,
-          runtimeProxyReason: runtime.reason
-        }).catch(() => null);
-        if (res?.reason === 'proxy-unreachable' && attempt < 2 && !relaunchCoordinator.isScheduled()) {
-          const t = setTimeout(() => { void attemptBootProxy(attempt + 1); }, attempt === 0 ? 4000 : 10000);
-          t.unref?.();
-          proxyRetryTimers.push(t);
-        }
-      };
-      void attemptBootProxy(0);
-    }
-  }
   const stop = startNativeIntegration({
     parseSessionData,
     onDebugPortReady() {
@@ -78,14 +49,16 @@ if (isDirectRun) {
       }
       const current = settings.get();
       if (current.enabled !== false) {
-        if (process.platform === 'darwin' && current.macAutoRelaunch !== false) {
-          const autoRes = relaunchCoordinator.attemptMac({
+        const wantAuto = current.autoRelaunch !== false && current.macAutoRelaunch !== false;
+        const minPolls = process.platform === 'darwin' ? 1 : 2;
+        if (wantAuto && missingPortPolls >= minPolls) {
+          const autoRes = relaunchCoordinator.attemptColdStart({
             enabled: current.enabled !== false,
-            macAutoRelaunch: current.macAutoRelaunch !== false
+            autoRelaunch: wantAuto
           });
-          if (autoRes.relaunched || autoRes.reason === 'already-attempted-session' || autoRes.reason === 'cooldown' || autoRes.reason === 'deferred-for-proxy-probe') return;
+          if (autoRes.relaunched || autoRes.reason === 'already-attempted-session' || autoRes.reason === 'cooldown') return;
         }
-        if (missingPortPolls >= 2) {
+        if (missingPortPolls >= 2 && !wantAuto) {
           maybePromptPostUpdateRelaunch({
             dataDir: paths.data,
             installDir: paths.installed,
@@ -102,6 +75,7 @@ if (isDirectRun) {
     getStatus: async () => {
       const current = settings.get();
       const health = await stop.health();
+      const autoRelaunch = current.autoRelaunch !== false && current.macAutoRelaunch !== false;
       return {
         healthy: health.healthy,
         compatibilityError: health.compatibilityError || '',
@@ -110,10 +84,10 @@ if (isDirectRun) {
         enabled: current.enabled !== false,
         language: current.language || DEFAULT_SETTINGS.language,
         platform: process.platform,
-        macAutoRelaunch: current.macAutoRelaunch !== false,
+        autoRelaunch,
+        macAutoRelaunch: autoRelaunch,
         mode: remoteSsh ? 'ssh-remote' : 'local',
         manualCommand: remoteSsh ? '' : manualLaunchCommand({ home: paths.home }),
-        proxy: remoteSsh ? null : inspectProxyRuntime(current, process.env),
         update: updateStatus(undefined, version)
       };
     },

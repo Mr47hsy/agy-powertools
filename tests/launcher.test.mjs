@@ -311,7 +311,7 @@ test('Sidecar Aux Pane Web UI serves post-update prompt copy, enforces token aut
     s.once('error', reject);
     s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); });
   });
-  let relaunched = 0, checked = 0, installedVer = '', savedMacAuto = true;
+  let relaunched = 0, checked = 0, installedVer = '', savedAutoRelaunch = true;
   const close = await startSidecarWebUi({
     port: freePort,
     token: 'secret-token',
@@ -322,12 +322,16 @@ test('Sidecar Aux Pane Web UI serves post-update prompt copy, enforces token aut
       clientVersion: '2.34.0',
       connected: true,
       enabled: true,
-      macAutoRelaunch: savedMacAuto,
+      autoRelaunch: savedAutoRelaunch,
+      macAutoRelaunch: savedAutoRelaunch,
       language: 'zh-CN'
     }),
     onRelaunch: async () => { relaunched++; return { scheduled: true }; },
-    onSetSettings: async patch => { savedMacAuto = Boolean(patch.macAutoRelaunch); return { macAutoRelaunch: savedMacAuto }; },
-    onCheckUpdate: async () => { checked++; return { status: 'available', version: '2.13.1', canInstall: true, releaseUrl: 'https://github.com/WhiteBr1ck/agy-powertools/releases/tag/v2.13.1' }; },
+    onSetSettings: async patch => {
+      savedAutoRelaunch = Boolean(patch.autoRelaunch ?? patch.macAutoRelaunch);
+      return { autoRelaunch: savedAutoRelaunch, macAutoRelaunch: savedAutoRelaunch };
+    },
+    onCheckUpdate: async () => { checked++; return { status: 'available', version: '2.13.1', canInstall: true, releaseUrl: 'https://github.com/Mr47hsy/agy-powertools/releases/tag/v2.13.1' }; },
     onInstallUpdate: async ({ version }) => { installedVer = version; return { status: 'preparing', version }; },
     onUpdateStatus: async () => ({ status: installedVer ? 'installing' : 'idle', version: installedVer })
   });
@@ -339,7 +343,7 @@ test('Sidecar Aux Pane Web UI serves post-update prompt copy, enforces token aut
     assert.ok(html.includes('复制诊断信息'));
     assert.ok(html.includes('id="mac-auto-relaunch-row"'));
     assert.ok(html.includes('id="mac-auto-relaunch-toggle"'));
-    assert.ok(html.includes("data.platform === 'darwin'"));
+    assert.ok(html.includes("data.mode !== 'ssh-remote'"));
     assert.ok(!html.includes('Antigravity (Powertools).app'));
     assert.ok(html.includes('[hidden] { display: none !important; }'));
     assert.equal(html.includes('\u00b7'), false);
@@ -347,7 +351,7 @@ test('Sidecar Aux Pane Web UI serves post-update prompt copy, enforces token aut
     assert.ok(inlineScript);
     new Function(inlineScript);
 
-    assert.equal((await fetch(`http://127.0.0.1:${freePort}/api/settings`, { method: 'POST', body: '{"macAutoRelaunch":false}' })).status, 401);
+    assert.equal((await fetch(`http://127.0.0.1:${freePort}/api/settings`, { method: 'POST', body: '{"autoRelaunch":false}' })).status, 401);
     const badSettings = await fetch(`http://127.0.0.1:${freePort}/api/settings`, {
       method: 'POST',
       headers: { 'x-sidecar-token': 'secret-token', 'Content-Type': 'application/json' },
@@ -357,10 +361,10 @@ test('Sidecar Aux Pane Web UI serves post-update prompt copy, enforces token aut
     const okSettings = await fetch(`http://127.0.0.1:${freePort}/api/settings`, {
       method: 'POST',
       headers: { 'x-sidecar-token': 'secret-token', 'Content-Type': 'application/json' },
-      body: '{"macAutoRelaunch":false}'
+      body: '{"autoRelaunch":false}'
     });
     assert.equal(okSettings.status, 200);
-    assert.equal(savedMacAuto, false);
+    assert.equal(savedAutoRelaunch, false);
 
     const unauth = await fetch(`http://127.0.0.1:${freePort}/api/status`);
     assert.equal(unauth.status, 401);
@@ -603,19 +607,12 @@ test('isRemoteSshEnvironment detects headless SSH remote hosts without false pos
   assert.ok(html.includes('当前处于 SSH 远端模式'));
 });
 
-test('scheduleRelaunchWithDebugPort reads saved proxy settings across platforms without creating shortcuts', () => {
-  const root = mkdtempSync(join(tmpdir(), 'agy-relaunch-proxy-'));
+test('scheduleRelaunchWithDebugPort launches Antigravity with --remote-debugging-port=0 across Windows, macOS, and Linux without mutating shortcuts', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agy-relaunch-cross-'));
   try {
     const dataDir = join(root, 'data');
     mkdirSync(dataDir, { recursive: true });
-    writeFileSync(join(dataDir, 'settings.json'), JSON.stringify({
-      proxyEnabled: true,
-      proxyUrl: 'socks5h://127.0.0.1:7897',
-      proxyBypass: '192.168.0.0/16',
-      proxyForceHttp1: true
-    }));
 
-    // Windows: reads settings.json automatically (so account switch & update relaunch preserve proxy)
     const winExe = join(root, 'AppData', 'Local', 'Programs', 'antigravity', 'Antigravity.exe');
     mkdirSync(join(root, 'AppData', 'Local', 'Programs', 'antigravity'), { recursive: true });
     writeFileSync(winExe, '');
@@ -627,15 +624,11 @@ test('scheduleRelaunchWithDebugPort reads saved proxy settings across platforms 
       env: { LOCALAPPDATA: join(root, 'AppData', 'Local') },
       spawnProcess(cmd, args, opts) { winSpawned.push({ cmd, args, opts }); return { unref() {} }; }
     });
-    assert.equal(winRes.proxyActive, true);
+    assert.equal(winRes.scheduled, true);
     const psBody = readFileSync(winSpawned[0].opts.env.AGY_RELAUNCH_SCRIPT, 'utf8');
-    assert.ok(psBody.includes("$env:HTTPS_PROXY = 'socks5h://127.0.0.1:7897'"));
-    assert.ok(psBody.includes("$env:NO_PROXY = 'localhost,127.0.0.1,::1,192.168.0.0/16'"));
-    assert.ok(psBody.includes("$env:GODEBUG = 'http2client=0'"));
-    assert.ok(psBody.includes('"--proxy-server=socks5://127.0.0.1:7897"'));
-    assert.ok(psBody.includes('"--proxy-bypass-list=localhost;127.0.0.1;[::1];192.168.0.0/16"'));
+    assert.ok(psBody.includes('--remote-debugging-port=0'));
+    assert.equal(psBody.includes('--proxy-server='), false);
 
-    // macOS: injects env + --env flags + Chromium proxy args and clears helper vars
     const macApp = join(root, 'Antigravity.app');
     mkdirSync(join(macApp, 'Contents', 'Resources', 'bin'), { recursive: true });
     const macLs = join(macApp, 'Contents', 'Resources', 'bin', 'language_server');
@@ -648,14 +641,9 @@ test('scheduleRelaunchWithDebugPort reads saved proxy settings across platforms 
       env: { ANTIGRAVITY_AGENTAPI_EXE: macLs },
       spawnProcess(cmd, args, opts) { macSpawned.push({ cmd, args, opts }); return { unref() {} }; }
     });
-    assert.equal(macRes.proxyActive, true);
-    assert.equal(macSpawned[0].opts.env.AGY_PROXY_URL, 'socks5h://127.0.0.1:7897');
-    assert.equal(macSpawned[0].opts.env.AGY_PROXY_CHROME_SERVER, 'socks5://127.0.0.1:7897');
-    assert.ok(macSpawned[0].args[1].includes('--env "HTTPS_PROXY=$p_url"'));
-    assert.ok(macSpawned[0].args[1].includes('--proxy-server=$p_chrome'));
-    assert.ok(macSpawned[0].args[1].includes('unset AGY_PROXY_URL'));
+    assert.equal(macRes.scheduled, true);
+    assert.ok(macSpawned[0].args[1].includes('--remote-debugging-port=0'));
 
-    // Linux: exports env + passes Chromium args
     const linExe = join(root, 'antigravity');
     writeFileSync(linExe, '');
     const linSpawned = [];
@@ -666,24 +654,8 @@ test('scheduleRelaunchWithDebugPort reads saved proxy settings across platforms 
       env: { APPIMAGE: linExe },
       spawnProcess(cmd, args, opts) { linSpawned.push({ cmd, args, opts }); return { unref() {} }; }
     });
-    assert.equal(linRes.proxyActive, true);
-    assert.ok(linSpawned[0].args[1].includes('export HTTP_PROXY="$p_url"'));
-    assert.ok(linSpawned[0].args[1].includes('--proxy-server=$p_chrome'));
-
-    // Disabled proxy: Windows relaunch explicitly clears stale proxy env vars
-    writeFileSync(join(dataDir, 'settings.json'), JSON.stringify({ proxyEnabled: false, proxyUrl: 'http://127.0.0.1:7897' }));
-    const offSpawned = [];
-    const offRes = scheduleRelaunchWithDebugPort({
-      dataDir,
-      home: root,
-      platform: 'win32',
-      env: { LOCALAPPDATA: join(root, 'AppData', 'Local') },
-      spawnProcess(cmd, args, opts) { offSpawned.push({ cmd, args, opts }); return { unref() {} }; }
-    });
-    assert.equal(offRes.proxyActive, false);
-    const psOffBody = readFileSync(offSpawned[0].opts.env.AGY_RELAUNCH_SCRIPT, 'utf8');
-    assert.ok(psOffBody.includes('Remove-Item Env:HTTP_PROXY'));
-    assert.ok(!psOffBody.includes('--proxy-server='));
+    assert.equal(linRes.scheduled, true);
+    assert.ok(linSpawned[0].args[1].includes('--remote-debugging-port=0'));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -839,106 +811,104 @@ test('parseFileUriAnchor, discoverOpenWithApps, and openFileWithApp detect insta
 });
 
 
-test('maybeAutoRelaunchProxy automatically relaunches once on cold start when non-TUN proxy is configured and reachable, skips when unreachable, and guards against loops', async () => {
-  const { maybeAutoRelaunchProxy, recordProxyReady } = await import('../lib/launcher.mjs');
-  const root = mkdtempSync(join(tmpdir(), 'agy-proxy-auto-'));
+test('maybeAutoRelaunchColdStart auto-recovers missing --remote-debugging-port=0 across Windows, Linux, WSL2, and macOS with fresh-install grace and loop guards', async () => {
+  const { maybeAutoRelaunchColdStart, shouldAutoRelaunchColdStart, recordDebugPortReady } = await import('../lib/launcher.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'agy-cold-auto-'));
   try {
     const dataDir = join(root, 'data');
+    const installDir = join(root, 'ext');
     mkdirSync(dataDir, { recursive: true });
+    mkdirSync(installDir, { recursive: true });
+    writeFileSync(join(installDir, '.agy-install.json'), '{}');
     let relaunchedCount = 0;
     const fakeRelaunch = () => { relaunchedCount++; return { scheduled: true }; };
-    const env = { ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:41001', LOCALAPPDATA: root };
-    const fakeExe = join(root, 'Programs', 'antigravity', 'Antigravity.exe');
+
+    const winExe = join(root, 'Programs', 'antigravity', 'Antigravity.exe');
     mkdirSync(join(root, 'Programs', 'antigravity'), { recursive: true });
-    writeFileSync(fakeExe, '');
+    writeFileSync(winExe, '');
+    const env = { ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:41001', LOCALAPPDATA: root };
 
-    // 1. Proxy port unreachable -> must NOT relaunch
-    const rUnreach = await maybeAutoRelaunchProxy({
-      dataDir, home: root, platform: 'win32', env,
-      enabled: true, proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897',
-      runtimeProxyReason: 'not-applied', now: 1_000_000,
-      checkPort: async () => ({ ok: false, error: 'closed' }),
-      relaunch: fakeRelaunch
+    // 1. Fresh extension install within 90s grace period -> skips surprise relaunch
+    const freshCheck = shouldAutoRelaunchColdStart({
+      dataDir, installDir, home: root, platform: 'win32', env,
+      enabled: true, autoRelaunch: true, now: Date.now() + 5_000
     });
-    assert.equal(rUnreach.relaunched, false);
-    assert.equal(rUnreach.reason, 'proxy-unreachable');
-    assert.equal(relaunchedCount, 0);
+    assert.equal(freshCheck.relaunch, false);
+    assert.equal(freshCheck.reason, 'fresh-install');
 
-    // 2. Proxy port open -> relaunches once
-    const rOk = await maybeAutoRelaunchProxy({
-      dataDir, home: root, platform: 'win32', env,
-      enabled: true, proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897',
-      runtimeProxyReason: 'not-applied', now: 1_000_000,
-      checkPort: async () => ({ ok: true }),
-      relaunch: fakeRelaunch
+    const settledNow = Date.now() + 600_000;
+
+    // 2. Windows cold start without debug port -> relaunches once
+    const rWin = maybeAutoRelaunchColdStart({
+      dataDir, installDir, home: root, platform: 'win32', env,
+      enabled: true, autoRelaunch: true, now: settledNow, relaunch: fakeRelaunch
     });
-    assert.equal(rOk.relaunched, true);
+    assert.equal(rWin.relaunched, true);
     assert.equal(relaunchedCount, 1);
 
     // 3. Same LS session -> blocked by already-attempted-session
-    const rSame = await maybeAutoRelaunchProxy({
-      dataDir, home: root, platform: 'win32', env,
-      enabled: true, proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897',
-      runtimeProxyReason: 'not-applied', now: 1_500_000,
-      checkPort: async () => ({ ok: true }),
-      relaunch: fakeRelaunch
+    const rSame = maybeAutoRelaunchColdStart({
+      dataDir, installDir, home: root, platform: 'win32', env,
+      enabled: true, autoRelaunch: true, now: settledNow + 500_000, relaunch: fakeRelaunch
     });
     assert.equal(rSame.relaunched, false);
     assert.equal(rSame.reason, 'already-attempted-session');
 
-    // 4. New session within cooldown -> blocked by cooldown
-    const rCool = await maybeAutoRelaunchProxy({
-      dataDir, home: root, platform: 'win32', env: { ...env, ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:41002' },
-      enabled: true, proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897',
-      runtimeProxyReason: 'not-applied', now: 1_030_000,
-      checkPort: async () => ({ ok: true }),
-      relaunch: fakeRelaunch
+    // 4. New session within 120s cooldown -> blocked by cooldown
+    const rCool = maybeAutoRelaunchColdStart({
+      dataDir, installDir, home: root, platform: 'win32',
+      env: { ...env, ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:41002' },
+      enabled: true, autoRelaunch: true, now: settledNow + 30_000, relaunch: fakeRelaunch
     });
     assert.equal(rCool.relaunched, false);
     assert.equal(rCool.reason, 'cooldown');
 
-    // 5. Second consecutive failure opens circuit breaker on 3rd attempt; recordProxyReady resets it
-    await maybeAutoRelaunchProxy({
-      dataDir, home: root, platform: 'win32', env: { ...env, ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:41003' },
-      enabled: true, proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897',
-      runtimeProxyReason: 'not-applied', now: 1_300_000,
-      checkPort: async () => ({ ok: true }),
-      relaunch: fakeRelaunch
+    // 5. Second consecutive failure opens circuit breaker on 3rd attempt; recordDebugPortReady resets it
+    maybeAutoRelaunchColdStart({
+      dataDir, installDir, home: root, platform: 'win32',
+      env: { ...env, ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:41003' },
+      enabled: true, autoRelaunch: true, now: settledNow + 300_000, relaunch: fakeRelaunch
     });
     assert.equal(relaunchedCount, 2);
-    const rCircuit = await maybeAutoRelaunchProxy({
-      dataDir, home: root, platform: 'win32', env: { ...env, ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:41004' },
-      enabled: true, proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897',
-      runtimeProxyReason: 'not-applied', now: 1_600_000,
-      checkPort: async () => ({ ok: true }),
-      relaunch: fakeRelaunch
+    const rCircuit = maybeAutoRelaunchColdStart({
+      dataDir, installDir, home: root, platform: 'win32',
+      env: { ...env, ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:41004' },
+      enabled: true, autoRelaunch: true, now: settledNow + 600_000, relaunch: fakeRelaunch
     });
     assert.equal(rCircuit.relaunched, false);
     assert.equal(rCircuit.reason, 'circuit-open');
 
-    recordProxyReady({ dataDir });
-    const rReset = await maybeAutoRelaunchProxy({
-      dataDir, home: root, platform: 'win32', env: { ...env, ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:41005' },
-      enabled: true, proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897',
-      runtimeProxyReason: 'not-applied', now: 1_900_000,
-      checkPort: async () => ({ ok: true }),
-      relaunch: fakeRelaunch
+    recordDebugPortReady({ dataDir });
+
+    // 6. Linux desktop cold start also auto-relaunches after reset, while headless SSH Linux never relaunches
+    const linExe = join(root, 'antigravity-bin');
+    writeFileSync(linExe, '');
+    const rSsh = maybeAutoRelaunchColdStart({
+      dataDir, installDir, home: root, platform: 'linux',
+      env: { SSH_CONNECTION: '10.0.0.1 55111 10.0.0.2 22', APPIMAGE: linExe, ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:41005' },
+      enabled: true, autoRelaunch: true, now: settledNow + 700_000, relaunch: fakeRelaunch
     });
-    assert.equal(rReset.relaunched, true);
+    assert.equal(rSsh.relaunched, false);
+    assert.equal(rSsh.reason, 'ssh-remote');
+
+    const rLin = maybeAutoRelaunchColdStart({
+      dataDir, installDir, home: root, platform: 'linux',
+      env: { DISPLAY: ':0', APPIMAGE: linExe, ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:41006' },
+      enabled: true, autoRelaunch: true, now: settledNow + 700_000, relaunch: fakeRelaunch
+    });
+    assert.equal(rLin.relaunched, true);
     assert.equal(relaunchedCount, 3);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('relaunch scripts escalate lingering POSIX processes to SIGKILL, resolve Linux symlinks, and preserve user system proxy env when plugin proxy is off', () => {
+test('relaunch scripts escalate lingering POSIX processes to SIGKILL and resolve Linux symlinks cleanly', () => {
   const root = mkdtempSync(join(tmpdir(), 'agy-relaunch-harden-'));
   try {
     const dataDir = join(root, 'data');
     mkdirSync(dataDir, { recursive: true });
-    writeFileSync(join(dataDir, 'settings.json'), JSON.stringify({ proxyEnabled: false }));
 
-    // 1. Linux: symlink target resolves realpath, targets main Electron PID before helpers, escalates to SIGKILL, and guards proxy unset
     const realExe = join(root, 'opt-antigravity');
     const symExe = join(root, 'bin-antigravity');
     writeFileSync(realExe, '');
@@ -956,13 +926,11 @@ test('relaunch scripts escalate lingering POSIX processes to SIGKILL, resolve Li
     const linScript = linSpawned[0].args[1];
     assert.ok(linScript.includes('index($0, " --type=") == 0 && index($0, " --import=") == 0'));
     assert.ok(linScript.includes('kill -KILL $rem_pids'));
-    assert.ok(linScript.includes('if [ -n "$AGY_POWERTOOLS_PROXY_SPEC" ]; then unset HTTP_PROXY'));
     assert.ok(linScript.includes('unset AGY_RELAUNCH_TARGET AGY_RELAUNCH_REAL'));
     if (process.platform !== 'win32') {
       assert.equal(spawnSync('sh', ['-n', '-c', linScript], { encoding: 'utf8' }).status, 0);
     }
 
-    // 2. macOS: escalates lingering processes to SIGKILL and guards proxy unset behind AGY_POWERTOOLS_PROXY_SPEC
     const macApp = join(root, 'Antigravity.app');
     mkdirSync(join(macApp, 'Contents', 'Resources', 'bin'), { recursive: true });
     const macLs = join(macApp, 'Contents', 'Resources', 'bin', 'language_server');
@@ -977,42 +945,19 @@ test('relaunch scripts escalate lingering POSIX processes to SIGKILL, resolve Li
     });
     const macScript = macSpawned[0].args[1];
     assert.ok(macScript.includes('kill -KILL $pids'));
-    assert.ok(macScript.includes('if [ -n "$AGY_POWERTOOLS_PROXY_SPEC" ]; then unset HTTP_PROXY'));
     if (process.platform !== 'win32') {
       assert.equal(spawnSync('sh', ['-n', '-c', macScript], { encoding: 'utf8' }).status, 0);
     }
-
-    // 3. Windows: guards Remove-Item Env:HTTP_PROXY behind $env:AGY_POWERTOOLS_PROXY_SPEC
-    const winExe = join(root, 'AppData', 'Local', 'Programs', 'antigravity', 'Antigravity.exe');
-    mkdirSync(join(root, 'AppData', 'Local', 'Programs', 'antigravity'), { recursive: true });
-    writeFileSync(winExe, '');
-    const winSpawned = [];
-    scheduleRelaunchWithDebugPort({
-      dataDir,
-      home: root,
-      platform: 'win32',
-      env: { LOCALAPPDATA: join(root, 'AppData', 'Local') },
-      spawnProcess(cmd, args, opts) { winSpawned.push({ cmd, args, opts }); return { unref() {} }; }
-    });
-    const psBody = readFileSync(winSpawned[0].opts.env.AGY_RELAUNCH_SCRIPT, 'utf8');
-    assert.ok(psBody.includes('if ($env:AGY_POWERTOOLS_PROXY_SPEC) {'));
-    assert.ok(psBody.includes('Remove-Item Env:HTTP_PROXY'));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('Windows relaunch uses zero-AMSI Explorer .lnk (no -EncodedCommand/DCOM/VBS), verifies proxy args, syncs onboarding app_storage.json post-exit, and parses cleanly in PowerShell 5.1 (Issues #53 & #59)', () => {
+test('Windows relaunch uses zero-AMSI Explorer .lnk (no -EncodedCommand/DCOM/VBS), syncs onboarding app_storage.json post-exit, and parses cleanly in PowerShell 5.1 (Issues #53 & #59)', () => {
   const root = mkdtempSync(join(tmpdir(), 'agy-win-relaunch-53-'));
   try {
     const dataDir = join(root, 'data');
     mkdirSync(dataDir, { recursive: true });
-    writeFileSync(join(dataDir, 'settings.json'), JSON.stringify({
-      proxyEnabled: true,
-      proxyUrl: 'http://127.0.0.1:7897',
-      proxyBypass: '192.168.0.0/16',
-      proxyForceHttp1: false
-    }));
     const winExe = join(root, 'AppData', 'Local', 'Programs', 'antigravity', 'Antigravity.exe');
     mkdirSync(join(root, 'AppData', 'Local', 'Programs', 'antigravity'), { recursive: true });
     writeFileSync(winExe, '');
@@ -1037,7 +982,6 @@ test('Windows relaunch uses zero-AMSI Explorer .lnk (no -EncodedCommand/DCOM/VBS
       spawnProcess(cmd, args, opts) { spawned.push({ cmd, args, opts }); return { unref() {} }; }
     });
     assert.equal(res.scheduled, true);
-    assert.equal(res.proxyActive, true);
     assert.equal(res.launchMethod, 'explorer-lnk');
     assert.ok(res.scriptPath);
     assert.equal(helperCalls.length, 1);
@@ -1047,26 +991,22 @@ test('Windows relaunch uses zero-AMSI Explorer .lnk (no -EncodedCommand/DCOM/VBS
     assert.ok(spawned[0].args[0].endsWith('relaunch-antigravity.lnk'));
 
     const psBody = readFileSync(spawned[0].opts.env.AGY_RELAUNCH_SCRIPT, 'utf8');
-    // Zero Defender AMSI / Huorong triggers
     assert.equal(psBody.includes('9BA05972-F6A8-11CF-A442-00A0C90A8F39'), false);
     assert.equal(psBody.includes('CreateProcessW'), false);
     assert.equal(psBody.includes('WScript.Shell'), false);
-    // Verifies startup ack, env cleanup, proxy arg verification, onboarding sync, detached ProcessStartInfo, and self-cleanup of .lnk/.ack/.ps1
     assert.ok(psBody.includes("Set-Content -LiteralPath $ackPath -Value ('STARTED ' + $PID)"));
     assert.ok(psBody.includes('Remove-Item Env:ELECTRON_RUN_AS_NODE,Env:NODE_OPTIONS,Env:ANTIGRAVITY_LS_ADDRESS'));
     assert.ok(psBody.includes('System.Diagnostics.ProcessStartInfo'));
     assert.ok(psBody.includes('$psi.UseShellExecute = $false'));
     assert.ok(psBody.includes('$psi.CreateNoWindow = $true'));
     assert.ok(psBody.includes('Start-AgyDetached $target $argLine $targetDir'));
-    assert.ok(psBody.includes("CommandLine.Contains('--proxy-server=')"));
-    assert.ok(psBody.includes("agy.onboarding.lastLoginUsername"));
+    assert.ok(psBody.includes('agy.onboarding.lastLoginUsername'));
     assert.ok(psBody.includes("'bob@example.com'"));
-    assert.ok(psBody.includes("agy.onboarding.lastLoginIsGcpTos"));
+    assert.ok(psBody.includes('agy.onboarding.lastLoginIsGcpTos'));
     assert.ok(psBody.includes("'true'"));
-    assert.ok(psBody.includes("Remove-Item -LiteralPath $lnkPath -Force"));
+    assert.ok(psBody.includes('Remove-Item -LiteralPath $lnkPath -Force'));
     assert.equal(psBody.includes('conhost.exe'), false);
 
-    // Fallback when .lnk creation fails uses plain powershell.exe -File (never -EncodedCommand)
     const fallbackSpawned = [];
     const fallbackRes = scheduleRelaunchWithDebugPort({
       dataDir,
@@ -1081,7 +1021,6 @@ test('Windows relaunch uses zero-AMSI Explorer .lnk (no -EncodedCommand/DCOM/VBS
     assert.ok(fallbackSpawned[0].args.includes('-File'));
     assert.equal(fallbackSpawned[0].args.includes('-EncodedCommand'), false);
 
-    // POSIX macOS/Linux relaunch also injects post-exit onboarding sync safely via env vars
     const linExe = join(root, 'antigravity-lin');
     writeFileSync(linExe, '');
     const linSpawned = [];
@@ -1100,43 +1039,13 @@ test('Windows relaunch uses zero-AMSI Explorer .lnk (no -EncodedCommand/DCOM/VBS
     if (process.platform !== 'win32') {
       assert.equal(spawnSync('sh', ['-n', '-c', linSpawned[0].args[1]], { encoding: 'utf8' }).status, 0);
     }
-
-    if (process.platform === 'win32') {
-      // Real PowerShell 5.1 AST parse check AND real .lnk creation check on Windows
-      const probe = "$e = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($env:AGY_PS_CHECK, [ref]$null, [ref]$e); if ($e -and $e.Count -gt 0) { $e | ForEach-Object { Write-Error $_.Message }; exit 1 }";
-      const out = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', probe], {
-        encoding: 'utf8',
-        env: { ...process.env, AGY_PS_CHECK: psBody.replace(/^\uFEFF/, '') }
-      });
-      assert.equal(out.status, 0, `PowerShell 5.1 parse error: ${out.stderr}`);
-
-      const realSpawned = [];
-      const realRes = scheduleRelaunchWithDebugPort({
-        dataDir: join(root, 'real-lnk'),
-        home: root,
-        platform: 'win32',
-        env: { ...process.env, LOCALAPPDATA: join(root, 'AppData', 'Local') },
-        spawnProcess(cmd, args, opts) { realSpawned.push({ cmd, args, opts }); return { unref() {} }; }
-      });
-      assert.equal(realRes.launchMethod, 'explorer-lnk');
-      assert.match(realSpawned[0].cmd, /explorer\.exe$/i);
-      assert.equal(existsSync(realSpawned[0].args[0]), true);
-      // Verify the generated .lnk targets powershell.exe -File directly (never conhost.exe --headless which triggers AV)
-      const inspectLnk = spawnSync('powershell.exe', [
-        '-NoProfile', '-NonInteractive', '-Command',
-        "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut($env:AGY_CHECK_LNK); Write-Output ($s.TargetPath + '|' + $s.Arguments)"
-      ], { encoding: 'utf8', env: { ...process.env, AGY_CHECK_LNK: realSpawned[0].args[0] } });
-      assert.equal(inspectLnk.status, 0);
-      assert.match(inspectLnk.stdout, /powershell\.exe\|-NoProfile /i);
-      assert.equal(/conhost\.exe/i.test(inspectLnk.stdout), false);
-    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('recordDebugPortReady and recordProxyReady clear relaunch cooldown timestamps on success so reopening within 120s still auto-relaunches (Issue #64)', async () => {
-  const { maybeAutoRelaunchMac, maybeAutoRelaunchProxy, recordDebugPortReady, recordProxyReady } = await import('../lib/launcher.mjs');
+test('recordDebugPortReady clears relaunch cooldown and createColdStartRelaunchCoordinator schedules at most one relaunch (Issue #64)', async () => {
+  const { createColdStartRelaunchCoordinator, maybeAutoRelaunchMac, recordDebugPortReady } = await import('../lib/launcher.mjs');
   const root = mkdtempSync(join(tmpdir(), 'agy-cooldown-reset-64-'));
   try {
     const dataDir = join(root, 'data');
@@ -1147,7 +1056,6 @@ test('recordDebugPortReady and recordProxyReady clear relaunch cooldown timestam
     let relaunches = 0;
     const fakeRelaunch = () => { relaunches++; return { scheduled: true }; };
 
-    // 1. macAutoRelaunch triggers once, then succeeds (recordDebugPortReady clears cooldown)
     const r1 = maybeAutoRelaunchMac({
       dataDir, home: root, platform: 'darwin',
       env: { ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:51001' },
@@ -1156,7 +1064,7 @@ test('recordDebugPortReady and recordProxyReady clear relaunch cooldown timestam
     assert.equal(r1.relaunched, true);
     recordDebugPortReady({ dataDir });
 
-    // Reopening 20 seconds later (< 120s cooldown) with a new LS address MUST still auto-relaunch!
+    // Reopening 20 seconds later (< 120s cooldown) with a new LS address MUST still auto-relaunch
     const r2 = maybeAutoRelaunchMac({
       dataDir, home: root, platform: 'darwin',
       env: { ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:51002' },
@@ -1165,120 +1073,22 @@ test('recordDebugPortReady and recordProxyReady clear relaunch cooldown timestam
     assert.equal(r2.relaunched, true);
     assert.equal(relaunches, 2);
 
-    // 2. Proxy auto-relaunch also clears cooldown after recordProxyReady
-    const p1 = await maybeAutoRelaunchProxy({
-      dataDir, home: root, platform: 'darwin',
-      env: { ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:52001' },
-      enabled: true, proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897',
-      runtimeProxyReason: 'not-applied', now: 2_000_000,
-      checkPort: async () => ({ ok: true }), relaunch: fakeRelaunch
-    });
-    assert.equal(p1.relaunched, true);
-    recordProxyReady({ dataDir });
-
-    const p2 = await maybeAutoRelaunchProxy({
-      dataDir, home: root, platform: 'darwin',
-      env: { ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:52002' },
-      enabled: true, proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897',
-      runtimeProxyReason: 'not-applied', now: 2_025_000,
-      checkPort: async () => ({ ok: true }), relaunch: fakeRelaunch
-    });
-    assert.equal(p2.relaunched, true);
-    assert.equal(relaunches, 4);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('cold-start proxy probe and missing-debug-port macOS check coordinate so concurrent triggers schedule at most one relaunch (Issue #64)', async () => {
-  const { createColdStartRelaunchCoordinator, maybeAutoRelaunchMac, maybeAutoRelaunchProxy } = await import('../lib/launcher.mjs');
-  const root = mkdtempSync(join(tmpdir(), 'agy-race-64-'));
-  try {
-    const macApp = join(root, 'Applications', 'Antigravity.app');
-    mkdirSync(macApp, { recursive: true });
-
-    // Case 1: Coordinator defers macOS check during async proxy checkPort; when proxy is reachable, only 1 relaunch fires.
-    const dataDir1 = join(root, 'd1');
-    mkdirSync(dataDir1, { recursive: true });
-    let resolvePort1;
-    let calls1 = 0;
-    const coord1 = createColdStartRelaunchCoordinator({
-      dataDir: dataDir1,
+    const dataDirCoord = join(root, 'coord');
+    mkdirSync(dataDirCoord, { recursive: true });
+    let coordCalls = 0;
+    const coord = createColdStartRelaunchCoordinator({
+      dataDir: dataDirCoord,
       home: root,
       platform: 'darwin',
       env: { ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:53001' },
       now: () => 3_000_000,
-      checkPort: () => new Promise(res => { resolvePort1 = res; }),
-      relaunch: () => { calls1++; return { scheduled: true }; }
+      relaunch: () => { coordCalls++; return { scheduled: true }; }
     });
-    const proxyPromise1 = coord1.attemptProxy({
-      enabled: true,
-      proxyEnabled: true,
-      proxyUrl: 'http://127.0.0.1:7897',
-      runtimeProxyReason: 'not-applied'
-    });
-    assert.equal(coord1.isProxyProbeInFlight(), true);
-    const macDuringProbe1 = coord1.attemptMac({ enabled: true, macAutoRelaunch: true });
-    assert.equal(macDuringProbe1.relaunched, false);
-    assert.equal(macDuringProbe1.reason, 'deferred-for-proxy-probe');
-    resolvePort1({ ok: true });
-    const proxyRes1 = await proxyPromise1;
-    assert.equal(proxyRes1.relaunched, true);
-    assert.equal(calls1, 1);
-    const macAfter1 = coord1.attemptMac({ enabled: true, macAutoRelaunch: true });
-    assert.equal(macAfter1.relaunched, false);
-    assert.equal(calls1, 1);
-
-    // Case 2: Proxy is unreachable -> deferred macOS check runs immediately after probe finishes, still exactly 1 relaunch.
-    const dataDir2 = join(root, 'd2');
-    mkdirSync(dataDir2, { recursive: true });
-    let resolvePort2;
-    let calls2 = 0;
-    const coord2 = createColdStartRelaunchCoordinator({
-      dataDir: dataDir2,
-      home: root,
-      platform: 'darwin',
-      env: { ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:53002' },
-      now: () => 3_100_000,
-      checkPort: () => new Promise(res => { resolvePort2 = res; }),
-      relaunch: () => { calls2++; return { scheduled: true }; }
-    });
-    const proxyPromise2 = coord2.attemptProxy({
-      enabled: true,
-      proxyEnabled: true,
-      proxyUrl: 'http://127.0.0.1:7897',
-      runtimeProxyReason: 'not-applied'
-    });
-    coord2.attemptMac({ enabled: true, macAutoRelaunch: true });
-    resolvePort2({ ok: false, error: 'ECONNREFUSED' });
-    const proxyRes2 = await proxyPromise2;
-    assert.equal(proxyRes2.relaunched, false);
-    assert.equal(calls2, 1);
-
-    // Case 3: Direct low-level race without coordinator — maybeAutoRelaunchProxy re-reads relaunch-state.json after await checkPort.
-    const dataDir3 = join(root, 'd3');
-    mkdirSync(dataDir3, { recursive: true });
-    let resolvePort3;
-    let calls3 = 0;
-    const fakeRelaunch3 = () => { calls3++; return { scheduled: true }; };
-    const env3 = { ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:53003' };
-    const lowProxyPromise = maybeAutoRelaunchProxy({
-      dataDir: dataDir3, home: root, platform: 'darwin', env: env3,
-      enabled: true, proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897',
-      runtimeProxyReason: 'not-applied', now: 3_200_000,
-      checkPort: () => new Promise(res => { resolvePort3 = res; }),
-      relaunch: fakeRelaunch3
-    });
-    const lowMacRes = maybeAutoRelaunchMac({
-      dataDir: dataDir3, home: root, platform: 'darwin', env: env3,
-      enabled: true, macAutoRelaunch: true, now: 3_200_000, relaunch: fakeRelaunch3
-    });
-    assert.equal(lowMacRes.relaunched, true);
-    resolvePort3({ ok: true });
-    const lowProxyRes = await lowProxyPromise;
-    assert.equal(lowProxyRes.relaunched, false);
-    assert.equal(lowProxyRes.reason, 'already-attempted-session');
-    assert.equal(calls3, 1);
+    const first = coord.attemptColdStart({ enabled: true, autoRelaunch: true });
+    const second = coord.attemptColdStart({ enabled: true, autoRelaunch: true });
+    assert.equal(first.relaunched, true);
+    assert.equal(second.relaunched, false);
+    assert.equal(coordCalls, 1);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

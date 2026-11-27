@@ -61,14 +61,15 @@ test('master switch restores renamed native hooks and reuses saved enhancements 
     __agyNativeBindings:{names:{resolve:'renamedResolve',segment:'renamedSegment',menu:'renamedMenu'}},I:{},tc:(_,value)=>structuredClone(value),Wb:(_,value)=>value});
   vm.runInContext(readFileSync(new URL('../lib/native-client.js',import.meta.url),'utf8'),context);
   const adapter=context.__agyNativeAdapter;
-  adapter.setStageUpdates(true);adapter.setContextLimit(1000000);adapter.setEfficientIO(true);
-  assert.equal(context.renamedResolve().checkpointConfig.maxTokenLimit,1000000);
+  adapter.setStageUpdates(true);
+  assert.equal(context.renamedResolve().plannerConfig.noToolExplanation,false);
   adapter.setEnabled(false);
   assert.equal(context.renamedResolve,nativeResolve);assert.equal(context.renamedSegment,nativeSegment);assert.equal(service.sendUserCascadeMessage,send);
   assert.equal(adapter.stageUpdates,false);assert.equal(context.sjc,undefined);assert.equal(context.Yyc,undefined);
   adapter.setEnabled(true);
-  const config=context.renamedResolve();assert.equal(config.checkpointConfig.maxTokenLimit,1000000);
-  assert.deepEqual(Array.from(config.plannerConfig.promptSectionCustomizationConfig.appendPromptSections,p=>p.title),['powertools_stage_updates','powertools_efficient_io']);
+  const config=context.renamedResolve();
+  assert.equal(config.plannerConfig.noToolExplanation,false);
+  assert.deepEqual(Array.from(config.plannerConfig.promptSectionCustomizationConfig.appendPromptSections,p=>p.title),['powertools_stage_updates']);
   adapter.dispose();assert.equal(context.renamedResolve,nativeResolve);assert.equal(context.renamedSegment,nativeSegment);
 });
 
@@ -419,24 +420,7 @@ test('suspendEdit preserves edited text and media across session switch without 
   assert.deepEqual(JSON.parse(JSON.stringify(attachments2)), [{ uri: 'normal.png' }]);
 });
 
-test('context override reaches the native config resolver and restores the default without mutating base config', () => {
-  const service={forkConversation(){},sendUserCascadeMessage(payload){return payload;}};
-  const element={'__reactFiber$fixture':{tag:10,type:{},memoizedProps:{value:service},return:null}};
-  const originalConfig={plannerConfig:{planModel:1417},checkpointConfig:{enabled:true}};
-  const originalResolve=()=>originalConfig;
-  const context=vm.createContext({document:{querySelector:()=>element},sjc:originalResolve,I:{CascadeConfigSchema:{},CheckpointConfigSchema:{}},tc:(_,value)=>structuredClone(value),Wb:(_,value)=>value});
-  vm.runInContext(readFileSync(new URL('../lib/native-client.js',import.meta.url),'utf8'),context);
-  context.__agyNativeAdapter.setContextLimit(256000);assert.equal(context.sjc({}).checkpointConfig.maxTokenLimit,256000);
-  context.__agyNativeAdapter.setContextLimit(500000);
-  const resolved=context.sjc({});
-  assert.equal(resolved.checkpointConfig.maxTokenLimit,500000);assert.equal(resolved.checkpointConfig.tokenThreshold,500000);
-  assert.equal(resolved.checkpointConfig.enabled,true);assert.equal(originalConfig.checkpointConfig.maxTokenLimit,undefined);
-  context.__agyNativeAdapter.setContextLimit(1000000);assert.equal(context.sjc({}).checkpointConfig.maxTokenLimit,1000000);
-  context.__agyNativeAdapter.setContextLimit(0);assert.equal(context.sjc,originalResolve);
-  assert.throws(()=>context.__agyNativeAdapter.setContextLimit(42),/上下文/);
-});
-
-test('stage updates compose with context limits, show live updates and fold them before the final answer',()=>{
+test('stage updates preserve existing prompt sections, show live updates, fold them before the final answer, and restore cleanly',()=>{
   const service={forkConversation(){},sendUserCascadeMessage(payload){return payload;}};
   const element={'__reactFiber$fixture':{tag:10,type:{},memoizedProps:{value:service},return:null}};
   const base={plannerConfig:{noToolExplanation:true,promptSectionCustomizationConfig:{appendPromptSections:[{title:'existing',content:'preserve'}]}},checkpointConfig:{enabled:true}};
@@ -447,14 +431,13 @@ test('stage updates compose with context limits, show live updates and fold them
   const context=vm.createContext({document:{querySelector:()=>element},sjc:resolve,Yyc:render,I:{},tc:(_,value)=>structuredClone(value),Wb:(_,value)=>value});
   vm.runInContext(readFileSync(new URL('../lib/native-client.js',import.meta.url),'utf8'),context);
   const adapter=context.__agyNativeAdapter;
-  adapter.setStageUpdates(true);adapter.setContextLimit(1000000);
+  adapter.setStageUpdates(true);
   const patchedResolve=context.sjc;
   vm.runInContext(readFileSync(new URL('../lib/native-client.js',import.meta.url),'utf8'),context);
   assert.equal(context.__agyNativeAdapter,adapter);
   assert.equal(context.sjc,patchedResolve);
   const config=context.sjc({});
   assert.equal(config.plannerConfig.noToolExplanation,false);
-  assert.equal(config.checkpointConfig.maxTokenLimit,1000000);
   assert.deepEqual(Array.from(config.plannerConfig.promptSectionCustomizationConfig.appendPromptSections,p=>p.title),['existing','powertools_stage_updates']);
   assert.equal(base.plannerConfig.noToolExplanation,true);
   assert.equal(base.plannerConfig.promptSectionCustomizationConfig.appendPromptSections.length,1);
@@ -466,67 +449,14 @@ test('stage updates compose with context limits, show live updates and fold them
   assert.equal(complete.tailSteps[0],final);assert.ok(!complete.body.content.groups.includes(final));
   const thinking={type:'thinkingIndicator',thinking:'not user-facing'};
   assert.equal(context.Yyc({groups:[thinking]}).body.type,'collapsible');
-  adapter.setEfficientIO(true);
-  let prompts=context.sjc({}).plannerConfig.promptSectionCustomizationConfig.appendPromptSections;
-  assert.deepEqual(Array.from(prompts,p=>p.title),['existing','powertools_stage_updates','powertools_efficient_io']);
-  assert.match(prompts.at(-1).content,/prefer rg/);
-  assert.match(prompts.at(-1).content,/operating system/);
   adapter.setStageUpdates(false);
   assert.equal(context.Yyc,render);
-  assert.equal(context.sjc({}).checkpointConfig.maxTokenLimit,1000000);
-  assert.equal(context.sjc({}).plannerConfig.noToolExplanation,true);
-  prompts=context.sjc({}).plannerConfig.promptSectionCustomizationConfig.appendPromptSections;
-  assert.deepEqual(Array.from(prompts,p=>p.title),['existing','powertools_efficient_io']);
-  adapter.setContextLimit(0);assert.notEqual(context.sjc,resolve);
-  adapter.setEfficientIO(false);assert.equal(context.sjc,resolve);
+  assert.equal(context.sjc,resolve);
   adapter.dispose();assert.equal(context.Yyc,render);
   assert.equal(adapter.active,false);
   vm.runInContext(readFileSync(new URL('../lib/native-client.js',import.meta.url),'utf8'),context);
   assert.notEqual(context.__agyNativeAdapter,adapter);
   assert.equal(context.__agyNativeAdapter.active,true);
-});
-
-test('setSidebarProjectLimit controls per-project visible rows, supports show-all, and restores cleanly',()=>{
-  const nativeFlat=args=>{
-    const out=[];
-    for(const g of args.groups){
-      out.push({type:'header',id:`header-${g.id}`,label:g.label});
-      const collapsed=args.onlyShowFirstFewConvos?.[g.id]??true;
-      const slice=collapsed?g.items.slice(0,6):g.items;
-      for(const it of slice)out.push({type:'row',id:it.cascadeId,cascadeId:it.cascadeId,isIndented:true,groupId:g.id});
-      if(g.items.length>6)out.push({type:'show-more',id:`show-more-${g.id}`,label:collapsed?`See all (${g.items.length})`:'See less',groupId:g.id,isIndented:true});
-    }
-    return out;
-  };
-  const context=vm.createContext({
-    document:{querySelector:()=>null},
-    __agyNativeBindings:{names:{resolve:'sjc',segment:'Yyc',menu:'lHc',sidebarItems:'VWc'}},
-    VWc:nativeFlat
-  });
-  vm.runInContext(readFileSync(new URL('../lib/native-client.js',import.meta.url),'utf8'),context);
-  const adapter=context.__agyNativeAdapter;
-  const groups=[{id:'p1',label:'Proj1',items:Array.from({length:8},(_,i)=>({cascadeId:`c${i}`}))}];
-  const call=flags=>context.VWc({groups,groupBy:'project',onlyShowFirstFewConvos:flags});
-
-  adapter.setSidebarProjectLimit(2);
-  let items=call({});
-  assert.equal(items.filter(x=>x.type==='row').length,2);
-  assert.equal(items.at(-1).type,'show-more');assert.equal(items.at(-1).label,'See all (8)');
-
-  items=call({p1:false});
-  assert.equal(items.filter(x=>x.type==='row').length,8);
-  assert.equal(items.at(-1).label,'See less');
-
-  adapter.setSidebarProjectLimit(-1);
-  items=call({});
-  assert.equal(items.filter(x=>x.type==='row').length,8);
-  assert.equal(items.some(x=>x.type==='show-more'),false);
-
-  adapter.setSidebarProjectLimit(0);
-  assert.equal(context.VWc,nativeFlat);
-  adapter.setSidebarProjectLimit(3);
-  adapter.dispose();
-  assert.equal(context.VWc,nativeFlat);
 });
 
 test('composerCascadeId resolves nearest conversationId or effectiveCascadeId for side-question and split-pane composers',()=>{
@@ -679,10 +609,8 @@ test('stable sendUserCascadeMessage wrapper preserves edit revert even when comp
   });
   vm.runInContext(readFileSync(new URL('../lib/native-client.js', import.meta.url), 'utf8'), context);
   const adapter = context.__agyNativeAdapter;
-  // All config overrides OFF when conversation mounts and destructures sendUserCascadeMessage (just like native useMemo)
+  // Stage updates OFF when conversation mounts and destructures sendUserCascadeMessage (just like native useMemo)
   adapter.setStageUpdates(false);
-  adapter.setEfficientIO(false);
-  adapter.setContextLimit(0);
   adapter.ensureRequestHook();
   const capturedSend = service.sendUserCascadeMessage;
 
@@ -695,195 +623,49 @@ test('stable sendUserCascadeMessage wrapper preserves edit revert even when comp
   ]);
 });
 
-test('createProjectsFromDroppedEntries creates git and plain folder projects, deduplicates/unarchives existing, skips files, and navigates', async () => {
-  const sidebarDropCode = readFileSync(new URL('../lib/native-sidebar-drop.mjs', import.meta.url), 'utf8')
-    .replaceAll('export function', 'function');
+test('installPage dynamically discovers renamed parent layout routes via sibling /customizations route and degrades safely without createFileRoute', () => {
   const clientCode = readFileSync(new URL('../lib/native-client.js', import.meta.url), 'utf8');
-
-  const existingProjects = [
-    {
-      project: {
-        id: 'existing-active',
-        name: 'app',
-        archived: false,
-        backendType: 1,
-        projectResources: { resources: [{ type: { case: 'folderUri', value: 'file:///fixtures/team/existing-app' } }] }
-      }
-    },
-    {
-      project: {
-        id: 'existing-archived',
-        name: 'old-app',
-        archived: true,
-        backendType: 1,
-        projectResources: { resources: [{ type: { case: 'gitFolder', value: { folderUri: 'file:///fixtures/team/old-app/' } } }] }
-      }
-    }
-  ];
-  const createdCalls = [];
-  const updatedCalls = [];
-  const placeholderCalls = [];
-  const storedItems = [];
-  const navigations = [];
-
-  const pms = {
-    projectsStateProvider: { getState: () => existingProjects },
-    resolveFolder: async uri => uri.includes('git-repo') ? { type: 1, uri } : { type: 0, uri },
-    getRepoInfos: async () => [{ branches: [{ name: 'dev' }, { name: 'main' }] }],
-    createProject: async project => { createdCalls.push(project); },
-    updateProject: async project => { updatedCalls.push(project); },
-    addPlaceholderProject: project => { placeholderCalls.push(project); }
-  };
-  const service = {
-    forkConversation() {},
-    statUri: async ({ uri }) => ({ fileType: uri.endsWith('/plain-file.txt') ? 1 : 2 })
+  let rebuilt = 0;
+  const shellLayout = {
+    id: '/_app/_shell',
+    children: [
+      { id: '/_app/_shell/customizations', fullPath: '/customizations', path: '/customizations' }
+    ]
   };
   const router = {
-    navigate: async opts => {
-      navigations.push({ to: opts.to, search: opts.search({ cascadeId: 'c1', tab: 'overview', q: 'x' }) });
-    },
-    buildRouteTree() {}
-  };
-  let pinnedStoreValue = '["already-pinned"]';
-  const mockStorageService = {
-    get: k => (k === 'pinnedProjectIds' ? pinnedStoreValue : undefined),
-    store: (k, v) => {
-      storedItems.push([k, v]);
-      if (k === 'pinnedProjectIds') pinnedStoreValue = v;
+    navigate() {},
+    buildRouteTree() { rebuilt++; },
+    routesById: {
+      '/_app/_shell': shellLayout,
+      '/_app/_shell/customizations': shellLayout.children[0]
     }
   };
+  shellLayout.children[0].parentRoute = shellLayout;
   const anchor = {
-    '__reactFiber$drop': {
-      tag: 10,
-      type: {},
-      memoizedProps: { value: { core: { projectManagementService: pms, storageService: mockStorageService } } },
-      return: {
-        tag: 10,
-        type: {},
-        memoizedProps: { value: service },
-        return: { tag: 10, type: {}, memoizedProps: { value: router }, return: null }
-      }
-    }
+    '__reactFiber$router': { tag: 10, type: {}, memoizedProps: { value: router }, return: null }
   };
+
   const ctx = vm.createContext({
-    URL,
     document: { querySelector: () => anchor },
-    crypto: { randomUUID: (() => { let n = 0; return () => `uuid-${++n}`; })() },
-    createProjectMsg: (name, id, resources, isWorkspaceOnly) => ({ id, name, projectResources: { resources }, isWorkspaceOnly, bound: true })
+    createFileRoute: id => opts => ({
+      id,
+      options: opts,
+      _addFileTypes() { return this; },
+      update(patch) { Object.assign(this, patch); return this; }
+    })
   });
-  vm.runInContext(`${sidebarDropCode}\n${clientCode}`, ctx);
+  vm.runInContext(clientCode, ctx);
+  const PageComp = () => null;
+  assert.equal(ctx.__agyNativeAdapter.installPage(PageComp), true);
+  assert.equal(rebuilt, 1);
+  assert.equal(shellLayout.children.some(r => r.path === '/powertools'), true);
 
-  const res = await ctx.__agyNativeAdapter.createProjectsFromDroppedEntries([
-    { path: '/fixtures/team/plain-file.txt', name: 'plain-file.txt', entryIsDir: false, entryIsFile: true },
-    { path: '/fixtures/team/also-file', name: 'also-file', entryIsDir: null, entryIsFile: null },
-    { path: '/fixtures/team/work/git-repo', name: 'git-repo', entryIsDir: true, entryIsFile: false },
-    { path: '/fixtures/team/work/app', name: 'app', entryIsDir: true, entryIsFile: false },
-    { path: '/fixtures/team/old-app', name: 'old-app', entryIsDir: true, entryIsFile: false }
-  ]);
-
-  assert.equal(res.skippedFiles, 1);
-  assert.equal(res.created.length, 3);
-  assert.equal(res.pinned, false);
-  assert.equal(res.target?.id, 'uuid-3');
-  assert.equal(createdCalls[0].name, 'also-file');
-  assert.equal(createdCalls[0].bound, true);
-  assert.deepEqual(JSON.parse(JSON.stringify(createdCalls[0].projectResources.resources[0])), {
-    type: { case: 'folderUri', value: 'file:///fixtures/team/also-file' }
+  // When createFileRoute is missing completely, installPage returns false instead of throwing so UI opens Standalone Overlay
+  const noRouteCtx = vm.createContext({
+    document: { querySelector: () => anchor }
   });
-  assert.equal(createdCalls[1].name, 'git-repo');
-  assert.deepEqual(JSON.parse(JSON.stringify(createdCalls[1].projectResources.resources[0])), {
-    type: { case: 'gitFolder', value: { folderUri: 'file:///fixtures/team/work/git-repo', defaultBranch: 'main' } }
-  });
-  // 'app' collides with existing project named 'app' -> disambiguated to 'work/app'
-  assert.equal(createdCalls[2].name, 'work/app');
-  assert.equal(placeholderCalls.length, 3);
-  assert.equal(storedItems.length, 3);
-  assert.equal(storedItems.some(([k]) => k === 'pinnedProjectIds'), false);
-
-  // Archived existing match was unarchived via updateProject
-  assert.equal(res.existing.length, 1);
-  assert.equal(res.existing[0].id, 'existing-archived');
-  assert.equal(updatedCalls.length, 1);
-  assert.equal(updatedCalls[0].archived, false);
-
-  // Navigated to last newly created project ('uuid-3') clearing cascadeId/tab/q
-  assert.deepEqual(JSON.parse(JSON.stringify(navigations)), [
-    { to: '/', search: { project: 'uuid-3' } }
-  ]);
-
-  // Dropping with { pin: true } prepends newly created/unpinned project IDs to pinnedProjectIds without duplicating
-  createdCalls.length = 0;
-  storedItems.length = 0;
-  navigations.length = 0;
-  const pinnedRes = await ctx.__agyNativeAdapter.createProjectsFromDroppedEntries([
-    { path: '/fixtures/team/pinned-new', name: 'pinned-new', entryIsDir: true, entryIsFile: false },
-    { path: '/fixtures/team/existing-app', name: 'existing-app', entryIsDir: true, entryIsFile: false }
-  ], { pin: true });
-  assert.equal(pinnedRes.pinned, true);
-  assert.equal(pinnedRes.target?.id, 'uuid-4');
-  assert.deepEqual(
-    JSON.parse(pinnedStoreValue),
-    ['uuid-4', 'existing-active', 'already-pinned']
-  );
-
-  // Re-dropping with { pin: true } for an already-pinned project preserves order and avoids redundant store write
-  const pinStoreCountBefore = storedItems.filter(([k]) => k === 'pinnedProjectIds').length;
-  existingProjects.push({
-    project: {
-      id: 'already-pinned',
-      name: 'already-pinned',
-      archived: false,
-      backendType: 1,
-      projectResources: { resources: [{ type: { case: 'folderUri', value: 'file:///fixtures/team/already-pinned' } }] }
-    }
-  });
-  const alreadyPinnedRes = await ctx.__agyNativeAdapter.createProjectsFromDroppedEntries([
-    { path: '/fixtures/team/already-pinned', name: 'already-pinned', entryIsDir: true, entryIsFile: false }
-  ], { pin: true });
-  assert.equal(alreadyPinnedRes.pinned, true);
-  assert.equal(storedItems.filter(([k]) => k === 'pinnedProjectIds').length, pinStoreCountBefore);
-
-  // Dropping only an existing project with pin disabled opens it directly without calling createProject
-  createdCalls.length = 0;
-  navigations.length = 0;
-  const existingOnlyRes = await ctx.__agyNativeAdapter.createProjectsFromDroppedEntries([
-    { path: '/fixtures/team/existing-app', name: 'existing-app', entryIsDir: true, entryIsFile: false }
-  ]);
-  assert.equal(createdCalls.length, 0);
-  assert.equal(existingOnlyRes.created.length, 0);
-  assert.equal(existingOnlyRes.existing.length, 1);
-  assert.equal(existingOnlyRes.existing[0].id, 'existing-active');
-  assert.deepEqual(JSON.parse(JSON.stringify(navigations)), [
-    { to: '/', search: { project: 'existing-active' } }
-  ]);
-
-  // Also verify statUri fileType=1 skips non-folder without entryIsFile, and plain-object fallback works when createProjectMsg is absent
-  const ctxFallback = vm.createContext({
-    URL,
-    document: { querySelector: () => anchor },
-    crypto: { randomUUID: () => 'uuid-fallback' }
-  });
-  vm.runInContext(`${sidebarDropCode}\n${clientCode}`, ctxFallback);
-  createdCalls.length = 0;
-  const fallbackRes = await ctxFallback.__agyNativeAdapter.createProjectsFromDroppedEntries([
-    { path: '/fixtures/team/plain-file.txt', name: 'plain-file.txt', entryIsDir: true, entryIsFile: false },
-    { path: '/fixtures/team/new-plain', name: 'new-plain', entryIsDir: null, entryIsFile: null }
-  ]);
-  assert.equal(fallbackRes.skippedFiles, 1);
-  assert.equal(fallbackRes.created.length, 1);
-  assert.equal(createdCalls[0].id, 'uuid-fallback');
-  assert.equal(createdCalls[0].bound, undefined);
-  service.statUri = async () => ({ fileType: 3 });
-  pms.resolveFolderOrThrow = async uri => { if (!uri.endsWith('/linked-dir')) throw Error('Not a directory'); };
-  const linked = await ctxFallback.__agyNativeAdapter.createProjectsFromDroppedEntries([
-    { path: '/fixtures/linked-file', entryIsDir: true }, { path: '/fixtures/linked-dir' }
-  ]);
-  assert.equal(linked.skippedFiles, 1);
-  assert.deepEqual(Array.from(linked.created, item => item.name), ['linked-dir']);
-  createdCalls.length = 0;
-  ctxFallback.sshRemote = { kind: 'ssh' };
-  await assert.rejects(ctxFallback.__agyNativeAdapter.createProjectsFromDroppedEntries([{ path: '/fixtures/local' }]), /local window/);
-  assert.equal(createdCalls.length, 0);
+  vm.runInContext(clientCode, noRouteCtx);
+  assert.equal(noRouteCtx.__agyNativeAdapter.installPage(PageComp), false);
 });
 
 test('inline edit capture-phase Enter and Send click revert and resend directly even when sendUserCascadeMessage was never hooked, and authService exposes loginSession helpers (Issues #58 & #56)', async () => {
@@ -1142,20 +924,11 @@ test('runtime option setters survive early boot before conversation service moun
   const resolve = () => baseConfig;
   const modelText = { type: 'step', step: { step: { case: 'plannerResponse', value: { response: 'Checking files.' } } } };
   const render = arg => ({ leadingSteps: arg.leadingSteps || [], tailSteps: [], body: { type: 'collapsible', isActive: arg.running, content: { groups: arg.groups } } });
-  const nativeFlat = args => {
-    const out = [];
-    for (const g of args.groups) {
-      out.push({ type: 'header', id: `header-${g.id}`, label: g.label });
-      for (const it of g.items) out.push({ type: 'row', id: it.cascadeId, cascadeId: it.cascadeId, isIndented: true, groupId: g.id });
-    }
-    return out;
-  };
   const context = vm.createContext({
     document: { querySelector: () => mountedElement },
-    __agyNativeBindings: { names: { resolve: 'sjc', segment: 'Yyc', menu: 'lHc', sidebarItems: 'VWc' } },
+    __agyNativeBindings: { names: { resolve: 'sjc', segment: 'Yyc', menu: 'lHc' } },
     sjc: resolve,
     Yyc: render,
-    VWc: nativeFlat,
     I: { CascadeConfigSchema: {}, CheckpointConfigSchema: {}, CascadePlannerConfigSchema: {}, PromptSectionCustomizationConfigSchema: {}, PromptSectionSchema: {} },
     tc: (_, value) => structuredClone(value),
     Wb: (_, value) => value
@@ -1166,29 +939,17 @@ test('runtime option setters survive early boot before conversation service moun
   // Simulate early SSH window boot: conversation service provider is not mounted yet.
   adapter.setEnabled(true);
   adapter.setStageUpdates(true);
-  adapter.setEfficientIO(true);
-  adapter.setContextLimit(500000);
-  adapter.setSidebarProjectLimit(2);
 
   assert.equal(adapter.stageUpdates, true);
   const resolved = context.sjc({});
   assert.equal(resolved.plannerConfig.noToolExplanation, false);
-  assert.equal(resolved.checkpointConfig.maxTokenLimit, 500000);
   assert.deepEqual(
     Array.from(resolved.plannerConfig.promptSectionCustomizationConfig.appendPromptSections, p => p.title),
-    ['powertools_stage_updates', 'powertools_efficient_io']
+    ['powertools_stage_updates']
   );
   const folded = context.Yyc({ groups: [], leadingSteps: [modelText], running: false });
   assert.equal(folded.leadingSteps.length, 0);
   assert.equal(folded.body.content.groups.length, 1);
-
-  const sidebarItems = context.VWc({
-    groups: [{ id: 'p1', label: 'Proj', items: [{ cascadeId: 'c1' }, { cascadeId: 'c2' }, { cascadeId: 'c3' }] }],
-    groupBy: 'project',
-    onlyShowFirstFewConvos: {}
-  });
-  assert.equal(sidebarItems.filter(x => x.type === 'row').length, 2);
-  assert.equal(sidebarItems.at(-1).label, 'See all (3)');
 
   // Once the conversation service mounts, ensureRequestHook attaches sendUserCascadeMessage with the already-saved options.
   mountedElement = serviceElement;
@@ -1196,10 +957,9 @@ test('runtime option setters survive early boot before conversation service moun
   await service.sendUserCascadeMessage({ cascadeId: 'conv-ssh', cascadeConfig: {} });
   assert.equal(sentPayloads.length, 1);
   assert.equal(sentPayloads[0].cascadeConfig.plannerConfig.noToolExplanation, false);
-  assert.equal(sentPayloads[0].cascadeConfig.checkpointConfig.maxTokenLimit, 500000);
   assert.deepEqual(
     Array.from(sentPayloads[0].cascadeConfig.plannerConfig.promptSectionCustomizationConfig.appendPromptSections, p => p.title),
-    ['powertools_stage_updates', 'powertools_efficient_io']
+    ['powertools_stage_updates']
   );
 
   adapter.dispose();

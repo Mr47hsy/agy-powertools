@@ -1,31 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createSettingsStore, DEFAULT_SETTINGS, detectSystemLanguage } from '../lib/settings.mjs';
 
-test('settings persist, merge safely, and reject unknown options without changing saved data', () => {
+test('settings persist, merge safely, sync autoRelaunch <-> macAutoRelaunch, ignore legacy disk keys on read, and reject invalid patches', () => {
   const directory = mkdtempSync(join(tmpdir(), 'agy-settings-'));
   try {
     const store = createSettingsStore(directory);
     assert.deepEqual(store.get(), DEFAULT_SETTINGS);
-    store.set({ customFont: '  Maple Mono NF CN  ' });
-    assert.equal(createSettingsStore(directory).get().customFont, 'Maple Mono NF CN');
-    for (const weight of [300,400,500,600,700,0]) {
-      store.set({customFontWeight:weight});
-      assert.equal(createSettingsStore(directory).get().customFontWeight,weight);
-    }
-    for (const weight of ['400',200,null,true]) assert.throws(()=>store.set({customFontWeight:weight}));
-    const fontBefore = readFileSync(join(directory, 'settings.json'), 'utf8');
-    for (const customFont of [null, true, 123, 'x'.repeat(129), 'Maple\nMono', 'Maple\u0000Mono', ...[';', '{', '}', '\\', '<', '>', '\u0085'].map(c => 'Font' + c)]) {
-      assert.throws(() => store.set({ customFont }), /设置/);
-      assert.equal(readFileSync(join(directory, 'settings.json'), 'utf8'), fontBefore);
-    }
-    store.set({ customFont: '' });
-    assert.equal(store.get().customFont, '');
+
     store.set({ compact: false, timing: false });
     assert.equal(createSettingsStore(directory).get().compact, false);
+    assert.equal(createSettingsStore(directory).get().timing, false);
+
     assert.equal(store.get().userBubbleTint, false);
     assert.equal(store.get().userBubblePreset, 'accent');
     assert.equal(store.get().userBubbleColor, '#2F75C3');
@@ -36,54 +25,43 @@ test('settings persist, merge safely, and reject unknown options without changin
     assert.equal(store.get().userBubbleColor, '#3D7A64');
     assert.equal(store.get().userBubbleStrength, 100);
     store.set({ userBubbleTint: false, userBubblePreset: 'accent', userBubbleColor: '#2F75C3', userBubbleStrength: 20 });
+
     assert.equal(store.get().overviewQuota, false);
-    assert.equal(store.get().titlebarQuickPanel, false);
-    store.set({ titlebarQuickPanel: true });
-    assert.equal(store.get().titlebarQuickPanel, true);
-    store.set({ titlebarQuickPanel: false });
     assert.equal(store.get().composerQuotaHalo, false);
     assert.equal(store.get().composerQuotaHaloWindow, 'auto');
-    assert.equal(store.get().composerWorkingBeam, false);
-    assert.equal(store.get().composerWorkingBeamPalette, 'gemini');
-    store.set({ overviewQuota: true, composerQuotaHalo: true, composerQuotaHaloWindow: 'weekly', composerWorkingBeam: true, composerWorkingBeamPalette: 'aurora' });
+    store.set({ overviewQuota: true, composerQuotaHalo: true, composerQuotaHaloWindow: 'weekly' });
     assert.equal(store.get().overviewQuota, true);
     assert.equal(store.get().composerQuotaHalo, true);
     assert.equal(store.get().composerQuotaHaloWindow, 'weekly');
-    assert.equal(store.get().composerWorkingBeam, true);
-    assert.equal(store.get().composerWorkingBeamPalette, 'aurora');
-    store.set({ composerQuotaHaloWindow: '5h', composerWorkingBeamPalette: 'quota' });
+    store.set({ composerQuotaHaloWindow: '5h' });
     assert.equal(store.get().composerQuotaHaloWindow, '5h');
-    assert.equal(store.get().composerWorkingBeamPalette, 'quota');
-    store.set({ overviewQuota: false, composerQuotaHalo: false, composerQuotaHaloWindow: 'auto', composerWorkingBeam: false, composerWorkingBeamPalette: 'gemini' });
+    store.set({ overviewQuota: false, composerQuotaHalo: false, composerQuotaHaloWindow: 'auto' });
+
     assert.equal(store.get().messageEdit, true);
     assert.equal(store.get().fileContextMenu, true);
+    assert.equal(store.get().autoRelaunch, true);
     assert.equal(store.get().macAutoRelaunch, true);
-    store.set({ macAutoRelaunch: false });
+    store.set({ autoRelaunch: false });
+    assert.equal(store.get().autoRelaunch, false);
     assert.equal(store.get().macAutoRelaunch, false);
     store.set({ macAutoRelaunch: true });
+    assert.equal(store.get().autoRelaunch, true);
+    assert.equal(store.get().macAutoRelaunch, true);
+
     assert.equal(store.get().sshCommandPaste, true);
     store.set({ sshCommandPaste: false });
     assert.equal(store.get().sshCommandPaste, false);
     store.set({ sshCommandPaste: true });
-    assert.equal(store.get().sidebarFolderDrop, true);
-    store.set({ sidebarFolderDrop: false });
-    assert.equal(store.get().sidebarFolderDrop, false);
-    store.set({ sidebarFolderDrop: true });
-    assert.equal(store.get().sidebarFolderDropPin, false);
-    store.set({ sidebarFolderDropPin: true });
-    assert.equal(store.get().sidebarFolderDropPin, true);
-    store.set({ sidebarFolderDropPin: false });
-    assert.equal(store.get().sessionSearch, true);
-    store.set({ sessionSearch: false });
-    assert.equal(store.get().sessionSearch, false);
-    store.set({ sessionSearch: true });
+
     assert.equal(store.get().subagentTelemetry, true);
     store.set({ subagentTelemetry: false }); assert.equal(store.get().subagentTelemetry, false);
     store.set({ subagentTelemetry: true }); assert.equal(store.get().subagentTelemetry, true);
+
     assert.equal(DEFAULT_SETTINGS.turnMeta, false);
     assert.equal(store.get().turnMeta, false);
-    store.set({ turnMeta: false }); assert.equal(store.get().turnMeta, false);
     store.set({ turnMeta: true }); assert.equal(store.get().turnMeta, true);
+    store.set({ turnMeta: false }); assert.equal(store.get().turnMeta, false);
+
     assert.equal(store.get().multiAccount, false);
     assert.equal(store.get().accountSwitcher, true);
     assert.equal(store.get().accountViewMode, 'list');
@@ -96,52 +74,71 @@ test('settings persist, merge safely, and reject unknown options without changin
     assert.equal(store.get().accountQuotaWindow, 'weekly');
     assert.equal(store.get().autoSwitchAccount, true);
     store.set({ multiAccount: false, accountSwitcher: true, accountViewMode: 'list', accountQuotaWindow: '5h', autoSwitchAccount: false });
-    assert.equal(store.get().proxyEnabled, false);
-    assert.equal(store.get().proxyUrl, '');
-    assert.equal(store.get().proxyBypass, 'localhost,127.0.0.1,::1');
-    assert.equal(store.get().proxyForceHttp1, false);
-    store.set({ proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897/', proxyBypass: '192.168.0.0/16', proxyForceHttp1: true });
-    assert.equal(store.get().proxyEnabled, true);
-    assert.equal(store.get().proxyUrl, 'http://127.0.0.1:7897');
-    assert.equal(store.get().proxyBypass, 'localhost,127.0.0.1,::1,192.168.0.0/16');
-    assert.equal(store.get().proxyForceHttp1, true);
-    store.set({ proxyEnabled: false, proxyUrl: '', proxyBypass: 'localhost,127.0.0.1,::1', proxyForceHttp1: false });
-    assert.equal(store.get().sidebarProjectLimit, 0);
-    store.set({ sidebarProjectLimit: 3 }); assert.equal(store.get().sidebarProjectLimit, 3);
-    store.set({ sidebarProjectLimit: -1 }); assert.equal(store.get().sidebarProjectLimit, -1);
-    store.set({ sidebarProjectLimit: 0 });
-    assert.equal(store.get().sidebarRunningBeam, false);
-    assert.equal(store.get().sidebarRunningBeamPalette, 'sync');
-    assert.equal(store.get().sidebarHideNativeSpinner, true);
-    assert.equal(store.get().sidebarRunningGroup, false);
-    store.set({ sidebarRunningBeam: true, sidebarRunningBeamPalette: 'neon', sidebarHideNativeSpinner: false, sidebarRunningGroup: true });
-    assert.equal(store.get().sidebarRunningBeam, true);
-    assert.equal(store.get().sidebarRunningBeamPalette, 'neon');
-    assert.equal(store.get().sidebarHideNativeSpinner, false);
-    assert.equal(store.get().sidebarRunningGroup, true);
-    store.set({ sidebarRunningBeam: false, sidebarRunningBeamPalette: 'sync', sidebarHideNativeSpinner: true, sidebarRunningGroup: false });
+
     assert.equal(DEFAULT_SETTINGS.overviewRange, 'weeklyQuota');
-    assert.equal(store.get().overviewRange, 'weeklyQuota');
     store.set({ overviewRange: '24h' }); assert.equal(store.get().overviewRange, '24h');
     store.set({ overviewRange: 'today' }); assert.equal(store.get().overviewRange, 'today');
     store.set({ overviewRange: 'weeklyQuota' }); assert.equal(store.get().overviewRange, 'weeklyQuota');
+
     assert.equal(DEFAULT_SETTINGS.pricingMode, 'standard');
-    assert.equal(store.get().pricingMode, 'standard');
     store.set({ pricingMode: 'promo' }); assert.equal(store.get().pricingMode, 'promo');
     store.set({ pricingMode: 'standard' }); assert.equal(store.get().pricingMode, 'standard');
-    store.set({ enabled: false }); assert.equal(store.get().enabled, false);
-    assert.equal(DEFAULT_SETTINGS.contextLimit, 0);
-    store.set({language:'en',contextLimit:1000000});assert.equal(store.get().contextLimit,1000000);assert.equal(store.get().language,'en');
-    store.set({contextLimit:256000});assert.equal(store.get().contextLimit,256000);
-    store.set({contextLimit:0});assert.equal(store.get().contextLimit,0);
+
+    store.set({ enabled: false, language: 'en' });
+    assert.equal(store.get().enabled, false);
+    assert.equal(store.get().language, 'en');
+
     const before = readFileSync(join(directory, 'settings.json'), 'utf8');
-    for (const value of [{ compact: 'false' }, { turnMeta: 'yes' }, { userBubbleTint: 'yes' }, { userBubblePreset: 'neon' }, { userBubbleColor: 'red' }, { userBubbleColor: '#123;color:red' }, { userBubbleStrength: 5 }, { userBubbleStrength: 105 }, { userBubbleStrength: 20.5 }, { sessionSearch: 'yes' }, { sidebarFolderDrop: 'yes' }, { sidebarFolderDropPin: 'yes' }, { composerQuotaHaloWindow: '1d' }, { sidebarRunningBeam: 'yes' }, { sidebarRunningBeamPalette: 'quota' }, { sidebarHideNativeSpinner: 1 }, { sidebarRunningGroup: 'on' }, { unknown: true }, { toString: false }, {language:'invalid'}, {overviewRange:'custom'}, {overviewRange:'invalid'}, {pricingMode:'batch'}, {pricingMode:true}, {accountViewMode:'grid'}, {accountQuotaWindow:'1h'}, {proxyUrl:'ftp://127.0.0.1:21'}, {proxyUrl:'http://127.0.0.1:7897;calc'}, {proxyBypass:'localhost"bad'}, {contextLimit:999999}, []]) assert.throws(() => store.set(value), /设置/);
+    for (const value of [
+      { compact: 'false' },
+      { turnMeta: 'yes' },
+      { userBubbleTint: 'yes' },
+      { userBubblePreset: 'neon' },
+      { userBubbleColor: 'red' },
+      { userBubbleColor: '#123;color:red' },
+      { userBubbleStrength: 5 },
+      { userBubbleStrength: 105 },
+      { userBubbleStrength: 20.5 },
+      { composerQuotaHaloWindow: '1d' },
+      { autoRelaunch: 'yes' },
+      { unknown: true },
+      { toString: false },
+      { language: 'invalid' },
+      { overviewRange: 'custom' },
+      { overviewRange: 'invalid' },
+      { pricingMode: 'batch' },
+      { pricingMode: true },
+      { accountViewMode: 'grid' },
+      { accountQuotaWindow: '1h' },
+      []
+    ]) {
+      assert.throws(() => store.set(value), /设置/);
+    }
     assert.equal(readFileSync(join(directory, 'settings.json'), 'utf8'), before);
-    store.set(DEFAULT_SETTINGS); assert.deepEqual(store.get(), DEFAULT_SETTINGS);
+
+    // Unknown legacy keys in existing settings.json must be safely ignored on get()
+    writeFileSync(join(directory, 'settings.json'), JSON.stringify({
+      compact: false,
+      macAutoRelaunch: false,
+      customFont: 'Maple Mono',
+      proxyEnabled: true,
+      contextLimit: 1000000
+    }, null, 2));
+    const legacyLoaded = createSettingsStore(directory).get();
+    assert.equal(legacyLoaded.compact, false);
+    assert.equal(legacyLoaded.autoRelaunch, false);
+    assert.equal(legacyLoaded.macAutoRelaunch, false);
+    assert.equal('customFont' in legacyLoaded, false);
+    assert.equal('proxyEnabled' in legacyLoaded, false);
+
+    store.set(DEFAULT_SETTINGS);
+    assert.deepEqual(store.get(), DEFAULT_SETTINGS);
     store.set({ compact: false, language: DEFAULT_SETTINGS.language === 'en' ? 'zh-CN' : 'en' });
     assert.deepEqual(store.reset(), DEFAULT_SETTINGS);
     assert.deepEqual(store.get(), DEFAULT_SETTINGS);
-  } finally { rmSync(directory, { recursive: true, force: true }); }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('detectSystemLanguage selects zh-CN, zh-TW, or en across BCP-47 and POSIX underscore locales (Issue #69)', () => {

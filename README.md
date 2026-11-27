@@ -1,14 +1,14 @@
 <div align="center">
   <img src="assets/logo.svg" width="72" height="72" alt="Agy Powertools Logo" />
   <h1>Agy Powertools</h1>
-  <p><strong>Antigravity 2.0 原生增强插件</strong></p>
-  <p>中文界面、上下文与用量统计、紧凑排版、会话分支与编辑、多账号切换、免 TUN 代理、SSH 与 WSL2 支持</p>
+  <p><strong>Antigravity 2.0 高健壮性原生增强插件</strong></p>
+  <p>上下文与速度统计、本地用量与请求看板、紧凑排版与阶段汇报、会话分支与消息编辑、文件右键实用项、SSH 与 WSL2 支持</p>
   <!-- plugin-badges:start -->
   <p>
-    <a href="https://github.com/WhiteBr1ck/agy-powertools/releases"><img src="https://img.shields.io/github/v/release/WhiteBr1ck/agy-powertools?label=Release&color=2563eb" height="20" alt="Release" /></a>
-    <a href="https://github.com/WhiteBr1ck/agy-powertools/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/WhiteBr1ck/agy-powertools/ci.yml?label=CI" height="20" alt="CI" /></a>
-    <a href="LICENSE"><img src="https://img.shields.io/github/license/WhiteBr1ck/agy-powertools?label=License&color=16a34a" height="20" alt="MIT License" /></a>
-    <img src="https://img.shields.io/badge/Antigravity-2.35.0-0f172a" height="20" alt="Antigravity 2.35.0" />
+    <a href="https://github.com/Mr47hsy/agy-powertools/releases"><img src="https://img.shields.io/github/v/release/Mr47hsy/agy-powertools?label=Release&color=2563eb" height="20" alt="Release" /></a>
+    <a href="https://github.com/Mr47hsy/agy-powertools/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Mr47hsy/agy-powertools/ci.yml?label=CI" height="20" alt="CI" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/Mr47hsy/agy-powertools?label=License&color=16a34a" height="20" alt="MIT License" /></a>
+    <img src="https://img.shields.io/badge/Antigravity-2.x%20Adaptive-0f172a" height="20" alt="Antigravity 2.x Adaptive" />
     <img src="https://img.shields.io/badge/Node.js-%3E%3D22.13-339933" height="20" alt="Node.js >= 22.13" />
     <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20WSL2-475569" height="20" alt="Platform" />
   </p>
@@ -18,7 +18,7 @@
     <a href="README_EN.md">English</a>
   </p>
   <p>
-    <a href="#界面预览">界面预览</a> |
+    <a href="#抗升级健壮性设计">抗升级设计</a> |
     <a href="#主要功能">主要功能</a> |
     <a href="#安装与卸载">安装与卸载</a> |
     <a href="#配置说明">配置说明</a> |
@@ -30,94 +30,28 @@
   <img src="docs/images/hero-workspace.png" alt="Agy Powertools 使用界面" width="100%" />
 </p>
 
-> 通过本机调试接口挂载在 Antigravity 2.0 内部，只读解析本地 SQLite 和 JSONL 会话记录，不修改客户端安装文件，也不打开外部网页。
+> 通过本机调试接口挂载在 Antigravity 2.0 内部，只读解析本地 SQLite 和 JSONL 会话记录，不修改客户端安装文件，也不篡改客户端原生界面文本。内置零硬依赖自愈回退组件与跨平台冷启动修复机制，即使 Antigravity 客户端升级混淆、重构路由或覆盖快捷方式，核心功能依然可持续运行。
 
 ---
 
-## 界面预览
+## 抗升级健壮性设计
 
-<table>
-  <tr>
-    <th width="50%">上下文窗口与生成速度</th>
-    <th width="50%">右侧任务进度与当前额度</th>
-  </tr>
-  <tr>
-    <td>
-      <img src="docs/images/card-composer.png" alt="上下文窗口与生成速度" width="100%" />
-      <p>在输入框旁查看上下文占用、缓存复用和实时生成速度；外框可选显示当前模型的剩余额度。</p>
-    </td>
-    <td>
-      <img src="docs/images/card-overview-panel.png" alt="右侧任务进度与当前额度" width="100%" />
-      <p>在右侧概览查看当前运行阶段、每步耗时和各模型组剩余额度，点击标题可折叠收起。</p>
-    </td>
-  </tr>
-  <tr>
-    <th>用量概览（浅色）</th>
-    <th>用量概览（深色）</th>
-  </tr>
-  <tr>
-    <td>
-      <img src="docs/images/card-dashboard-light.png" alt="用量概览浅色主题" width="100%" />
-      <p>默认按本轮周限额周期统计请求次数、Token、缓存命中率、参考费用、53 周热力图和模型健康状态。</p>
-    </td>
-    <td>
-      <img src="docs/images/card-dashboard-dark.png" alt="用量概览深色主题" width="100%" />
-      <p>随客户端切换浅色和深色主题，对比各模型的 Token 与费用占比、缓存命中率和平均速度。</p>
-    </td>
-  </tr>
-  <tr>
-    <th>请求记录与缓存异常</th>
-    <th>多账号切换与额度（默认关闭）</th>
-  </tr>
-  <tr>
-    <td>
-      <img src="docs/images/card-requests.png" alt="请求记录与缓存异常" width="100%" />
-      <p>按账号、模型、会话和状态筛选单次请求，标出短间隔内异常掉缓存的记录，排除冷启动与上下文压缩误报。</p>
-    </td>
-    <td>
-      <img src="docs/images/card-accounts.png" alt="多账号切换与额度管理" width="100%" />
-      <p>通过系统凭据管理器本地保存和切换多个 Google 账号，集中查看 5 小时和周限额。</p>
-    </td>
-  </tr>
-  <tr>
-    <th>多语言与显示设置</th>
-    <th>免 TUN 独立代理（默认关闭）</th>
-  </tr>
-  <tr>
-    <td>
-      <img src="docs/images/card-settings.png" alt="多语言与显示设置" width="100%" />
-      <p>支持简体中文、繁體中文和 English 切换，包含紧凑排版、用户消息底色和额度边框周期等选项。</p>
-    </td>
-    <td>
-      <img src="docs/images/card-proxy.png" alt="免 TUN 独立代理设置" width="100%" />
-      <p>单独为 Antigravity 配置 HTTP 或 SOCKS5 代理，内置连通性测试、强制 HTTP/1.1 与应用内检查更新。</p>
-    </td>
-  </tr>
-</table>
+- **零硬依赖 UI 与协议回退**：当 Antigravity 版本更新导致内部压缩符号（Popover、Select、Button、Switch、Toast、Protobuf/Lexical 辅助函数）改名或签名变化时，不再抛出兼容性异常中断启动，而是自动按组件组原子切换至自带的 React + CSS 变量回退实现。
+- **路由与多级 DOM 锚点自适应**：动态发现 TanStack Router 父级布局路由；即使客户端彻底重构路由表导致 `/powertools` 无法注册，点击侧栏或标题栏入口也会自动以独立全屏面板模式（Standalone Overlay）打开完整看板。侧栏导航、输入框圆环、消息编辑按钮、回复工具栏与会话右键菜单均具备多级 DOM 选择器兜底。
+- **全平台冷启动自动修复**：客户端覆盖更新常会清空快捷方式的 `--remote-debugging-port=0` 参数。伴生进程在 Windows、macOS、Linux 与 WSL2 本地桌面环境下会自动修复常用快捷方式并在冷启动时带参重启一次（内置会话去重、120 秒冷却、连续 2 次熔断与新装宽限期保护，可在设置中随时关闭）。
+- **只读容错数据解析**：Protobuf 解码器自动跳过未知字段、Wire Type 3/4 分组与尾部截断字节；SQLite 读取按表独立容错并在表结构变更时无缝回退至 JSONL 会话日志。
+- **克制无侵入边界**：仅对 Powertools 自身面板提供简 / 繁 / 英多语言，不扫描或改写客户端原生 DOM 文本，大幅降低客户端升级引发的界面冲突概率。
 
 ---
 
 ## 主要功能
 
-- **多语言汉化（简 / 繁 / 英）**：翻译 Antigravity 常用侧栏、菜单、权限弹窗、模型说明、设置页和 Swarm 面板，不改动聊天正文与代码块。
-- **上下文与速度统计**：在输入框旁查看上下文窗口占用（含缓存复用、压缩次数和 Orchestrator 规划/执行分模型进度）以及生成速度（`tok/s`、首字延迟、模型/工具耗时和本会话参考费用），支持子智能体统计。
-- **本地用量与请求看板**：左侧栏新增 `Powertools` 页面，合并统计桌面端与 `agy` CLI 用量，包含用量概览（热力图、模型分布、参考费用）、请求记录、短间隔缓存异常标红、报错一键复制、配额估算和官方参考单价拉取。
-- **紧凑排版与阶段汇报**：保留客户端字号，收紧正文行高和段落间距；Agent 连续调用工具时先简要汇报进度，整轮完成后自动折进顶部用时栏。
-- **会话分支与消息编辑**：可从任意历史回答或会话菜单分支出新会话（完整保留历史，支持含子智能体的会话）；点击已发消息旁的编辑按钮可直接在原位置修改重发。
-- **多账号切换（默认关闭）**：基于 Windows 凭据管理器、macOS 钥匙串或 Linux Secret Service 本地隔离多个 Google 账号，不落明文令牌；侧栏底部可直接看额度、切号，支持耗尽自动切号。
-- **免 TUN 独立代理（默认关闭）**：无需开启系统全局代理，单独给 Antigravity 注入代理参数和环境变量；内置连通性测试、冷启动未启用提醒，以及可选 `GODEBUG=http2client=0` 缓解 `EOF` 断连。
-- **SSH 远程与 WSL2 支持**：桌面端连 `SSH` 远端窗口时直接读取远端会话与用量统计，不需要在服务器装插件；Windows Antigravity 开启内置 WSL2 模式时，自动处理跨系统 CDP 连接（兼容 NAT 和 Mirrored）、多账号凭据与重启。
-- **文件右键与其他实用项**：右键消息中的文件链接或右侧文件树可引用到输入框、打开、定位文件夹、复制文件或复制路径（Windows 支持局域网 NAS 共享路径）；右侧概览支持可折叠的任务进度与当前额度，另提供窗口标题未读数、可选输入框额度边框和用户气泡底色。
-
----
-
-## 没什么用的功能（但很帅）
-
-<p align="center">
-  <img src="docs/images/card-border-beam.webp" alt="工作时输入框流光预览" width="100%" />
-</p>
-
-- **工作时输入框流光（默认关闭）**：灵感来自 [border-beam-ios](https://github.com/ismnoiet/border-beam-ios)，基于圆角矩形 SDF 的轻量 WebGL 着色器。Agent 工作时沿输入框边缘匀速旋转；内置 `Gemini`、`极光`、`炫彩`、`霓虹`、`主题色`、`额度色` 6 套主题。
+1. **上下文与速度统计**：在输入框旁查看上下文窗口占用（含缓存复用、压缩次数和 Orchestrator 规划/执行分模型进度）以及生成速度（`tok/s`、首字延迟、模型/工具耗时和本会话参考费用），支持子智能体统计。
+2. **本地用量与请求看板**：左侧栏新增 `Powertools` 页面，合并统计桌面端与 `agy` CLI 用量，包含用量概览（热力图、模型分布、参考费用）、请求记录、短间隔缓存异常标红、报错一键复制、配额估算和官方参考单价拉取。
+3. **紧凑排版与阶段汇报**：保留客户端字号，收紧正文行高和段落间距；Agent 连续调用工具时先简要汇报进度，整轮完成后自动折进顶部用时栏。
+4. **会话分支与消息编辑**：可从任意历史回答或会话菜单分支出新会话（完整保留历史，支持含子智能体的会话）；点击已发消息旁的编辑按钮可直接在原位置修改重发。
+5. **文件右键与其他实用项**：右键消息中的文件链接或右侧文件树可引用到输入框、打开、定位文件夹、复制文件或复制路径（Windows 支持局域网 NAS 共享路径）；右侧概览支持可折叠的任务进度与当前额度，另提供窗口标题未读数、可选输入框额度边框和用户气泡底色。
+6. **SSH 远程与 WSL2 支持**：桌面端连 `SSH` 远端窗口时直接读取远端会话与用量统计，不需要在服务器装插件；Windows Antigravity 开启内置 WSL2 模式时，自动处理跨系统 CDP 连接（兼容 NAT 和 Mirrored）、多账号凭据与重启。
 
 ---
 
@@ -129,13 +63,13 @@
 
 把下面这段话直接发给 Antigravity 或其他可执行本地命令的 Agent：
 
-> 请帮我安装 Agy Powertools：https://github.com/WhiteBr1ck/agy-powertools 。先阅读 README 和 docs/INSTALL_AGENT.md，使用项目提供的统一安装器，优先使用已有 Node.js 或 Antigravity 自带运行环境。保留其他插件、账户设置和聊天记录，不要强制退出当前客户端。安装后核对版本并告诉我结果；需要重启时最后提醒我。
+> 请帮我安装 Agy Powertools：https://github.com/Mr47hsy/agy-powertools 。先阅读 README 和 docs/INSTALL_AGENT.md，使用项目提供的统一安装器，优先使用已有 Node.js 或 Antigravity 自带运行环境。保留其他插件、账户设置和聊天记录，不要强制退出当前客户端。安装后核对版本并告诉我结果；需要重启时最后提醒我。
 
 详细步骤见 [Agent 安装指南](docs/INSTALL_AGENT.md)。
 
 ### 方式二：命令行安装
 
-从 [Releases](https://github.com/WhiteBr1ck/agy-powertools/releases) 下载最新 ZIP 解压（或克隆本仓库），在项目目录运行：
+从 [Releases](https://github.com/Mr47hsy/agy-powertools/releases) 下载最新 ZIP 解压（或克隆本仓库），在项目目录运行：
 
 ```powershell
 # Windows (PowerShell)
@@ -147,11 +81,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 sh ./install.sh
 ```
 
-覆盖安装会保留已有设置，不会强制关闭客户端。完成当前任务后重启 Antigravity，左侧栏出现 **Powertools** 即可使用。macOS 无需创建第二个 `.app` 图标，正常打开原版 Antigravity 时若未检测到调试端口，插件会自动带参数重启一次生效（内置防循环保护，亦可在设置或右侧「插件 -> Powertools」关闭自动重启并改为手动点击重启）。
+覆盖安装会保留已有设置，不会强制关闭客户端。完成当前任务后重启 Antigravity，左侧栏出现 **Powertools** 即可使用。正常打开未带调试端口的 Antigravity 时（例如客户端更新覆盖快捷方式后首次启动），插件会自动修复快捷方式并带参数重启一次生效（内置防死循环保护，亦可在设置或右侧「插件 -> Powertools」关闭自动重启）。
 
-### 更新与卸载
+### 发布新版本、应用内更新与卸载
 
-- **应用内更新**：打开 **Powertools -> 设置 -> 关于 -> 检查更新**，点击 **立即更新** 自动完成 SHA-256 校验与替换，启动失败会自动回滚旧版。
+- **GitHub Releases 自动构建**：推送 `v*` 标签（如 `git tag v2.17.0 && git push origin v2.17.0`）或在 GitHub Actions 手动触发 `Release` 工作流，即可自动运行测试并发布 `.bundle.gz`、`.sha256` 与 `.zip` 安装包。
+- **应用内更新**：打开 **Powertools -> 设置 -> 关于 -> 检查更新**，点击 **立即更新** 自动完成 SHA-256 校验与热更新替换，启动失败会自动回滚旧版。
 - **卸载**：运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1`（Windows）或 `sh ./uninstall.sh`（macOS / Linux / WSL2）。末尾加 `--keep-settings` 可保留个人配置。卸载不会影响原有聊天记录、账号和其他插件。
 
 ---
@@ -168,48 +103,38 @@ sh ./install.sh
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | 启用 Powertools | 开启 | 插件总开关；关闭后暂停所有界面增强，保留已保存设置 |
-| 语言 | `简体中文` | 可选 `简体中文`、`繁體中文` 或 `English` |
-| 本地字体与字重 | 跟随客户端 | 按中文名或字体族名搜索，选择后立即生效。字重可独立设置，恢复默认会同时清除两项设置。内置终端沿用客户端字体 |
+| 语言 | `简体中文` | 控制 Powertools 自身面板语言（`简体中文`、`繁體中文` 或 `English`），不改动客户端原生界面文本 |
 | 紧凑排版 | 开启 | 收紧行高至 `1.4`、段落间距与工具行高，字号跟随客户端设置 |
 | 用户消息气泡着色 | 关闭 | 为用户发出的消息添加底色和细边框，支持强调色、5 套预设、自定义颜色与 10%-100% 混合强度滑条 |
 | 始终显示会话目录 | 开启 | 在多轮对话左侧常驻显示轮次跳转目录 |
 | 切换会话时保持概览 | 开启 | 切换会话时保持右侧概览面板的展开状态 |
-| 项目默认显示会话数 | `默认 (6)` | 控制侧栏每个项目默认展示条数（`默认 (6)` / `1-10` / `全部展开`） |
-| 拖入文件夹创建项目 | 开启 | 将本地文件夹拖到侧栏以创建或打开项目。仅限本地窗口 |
-| 拖入项目自动置顶 | 关闭 | 置顶通过拖放创建或打开的项目 |
-| 侧栏运行中会话流光 | 关闭 | 围绕侧栏运行中会话框显示沿圆角边缘匀速移动的 SVG 光带（默认跟随输入框配色，亦可独立配色、隐藏原生四圆点动画或试用预览；待确认态自动切为琥珀提示色） |
-| 侧栏进行中会话监控分组 | 关闭 | 在侧栏顶部置顶集中展示所有进行中的会话、所属项目、活跃子任务与等待确认提醒，支持折叠与暂停动效，无运行会话时自动隐藏 |
 | 任务栏未读提醒 | 开启 | 后台对话完成时在窗口和任务栏标题前显示 `(N)` 未读数，切回后消除 |
+| 冷启动自动带参重启 | 开启 | 客户端未带调试端口启动时（如升级覆盖快捷方式后），自动修复快捷方式并带参重启一次（仅本地窗口） |
 
 ### 统计与进度
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | 概览默认时间范围 | `本轮周限额内用量` | 可选本轮周限额内用量、今天、24 小时、昨天、本周、本月、30 天或全部时间 |
+| 参考费用计价口径 | `官方标准价` | 可选官方标准价或 API 活动价计算参考费用 |
 | 上下文圆环 | 开启 | 在输入框旁显示上下文占用圆环、缓存复用和 Orchestrator 分模型拆解 |
 | 速度与统计 | 开启 | 显示生成速度码表，点击查看会话统计与参考费用 |
 | 任务进度 | 开启 | 在右侧概览显示可折叠的任务清单、运行阶段与步骤耗时 |
 | 概览显示账号额度 | 关闭 | 在右侧概览底部以可折叠区块显示各模型组的 5 小时和周剩余额度 |
-| 标题栏快捷概览 | 关闭 | 开启后在窗口右上角标题栏显示 Powertools 快捷浮窗入口，无需离开当前会话即可查看与管理全部面板 |
 | 输入框额度光环 | 关闭 | 沿输入框外框顺时针显示当前所选模型的剩余额度（绿 / 琥珀 / 红） |
 | 光环额度周期 | `自动（较低项）` | 开启光环后可选 `自动（较低项）`、`周限额` 或 `5 小时限额` |
-| 工作时输入框流光 | 关闭 | Agent 工作时沿输入框边框平滑旋转流光光环（空闲淡出零占用）；与额度光环同时开启时自动无缝切换，内置 6 套色板与「试用预览」按钮 |
 | 子智能体上下文与统计 | 开启 | 在概览子智能体列表、子智能体输入框和主会话浮窗显示子智能体统计 |
 | 每轮用时 / 点击展开工具 | 开启 | 在已完成回复顶部显示总耗时，点击展开工具调用与阶段汇报 |
 | 每轮底栏统计 | 关闭 | 在已完成回复底部显示当轮模型、缓存命中率、输入/输出 Token 和预估费用，悬停查看完整明细 |
 
-### 会话增强、账号、代理与实验性上下文
+### 会话增强、右键实用项与多账号
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | 阶段汇报 | 开启 | 工作时汇报当前进展，整轮完成后收进顶部用时栏 |
-| 并行检索与读取 | 关闭 | 引导 Agent 在同一轮合并搜索和读取文件，减少来回轮次 |
-| 原生搜索支持全文检索 | 开启 | 增强顶部原生放大镜搜索，在搜标题的同时检索历史对话正文、代码块与终端命令，点击直达对应轮次 |
 | 分支会话 / 消息编辑 / 文件右键 | 开启 | 原生会话分支、原位消息编辑和本地 / NAS / 文件树右键菜单（含「打开方式 >」本机应用与 `#L:C` 跳转） |
 | 识别粘贴的 SSH 命令 | 开启 | 在「新建项目 -> SSH Host」粘贴 `ssh -p 端口 用户@主机` 时自动填入 `用户@主机:端口`（自动忽略密码） |
-| 启用多账号切换 | 关闭 | 需确认风险提示；含侧栏切换器、列表/卡片视图、5H/周周期与耗尽自动切号 |
-| 启用独立代理（免 TUN） | 关闭 | 协议 / 主机 / 端口输入、连通性测试、冷启动提醒和强制 HTTP/1.1 |
-| 上下文目标（实验性） | `默认` | 可选 `默认`、`256K`、`500K`、`1M`；`默认` 不改动客户端原生设置 |
+| 启用多账号切换 | 关闭 | 需确认风险提示；支持桌面端与 WSL2 多账号凭据隔离、侧栏切换器、5H/周周期与耗尽自动切号 |
 
 ### 环境变量与文件路径
 

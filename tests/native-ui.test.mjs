@@ -61,172 +61,6 @@ test('already-loaded injection initializes without waiting and disposes cleanly'
   assert.ok(p.nodes.every(n => !n.isConnected));
 });
 
-function fontPage(initial = {}) {
-  const p = page(true), properties = new Map(), writes = [];
-  let env, stored = { enabled: true, customFont: '', ...initial };
-  p.document.documentElement.style = { setProperty: (k, v) => properties.set(k, v), removeProperty: k => properties.delete(k) };
-  const create = p.document.createElement;
-  p.document.createElement = tag => {
-    if (tag !== 'canvas') return create(tag);
-    return { getContext: () => ({
-      font: '',
-      measureText() {
-        // 首个等宽基准恰好同宽，第二个基准仍能识别已安装字体。
-        return { width: this.font.includes('"Maple Mono NF CN"') ? 100 : this.font.includes('serif') ? 80 : 100 };
-      }
-    }) };
-  };
-  vm.runInContext(readFileSync(new URL('../lib/native-fonts.js', import.meta.url),'utf8'), p.context);
-  p.context.__agyPanels = value => { env = value; return { dispose() {} }; };
-  p.context.__agyNativeAdapter.installPage = () => true;
-  p.context.__agyInitialSettings = stored;
-  p.context.__agyPowertoolsHost = raw => {
-    const req = JSON.parse(raw);
-    if (req.method === 'settings.set') { writes.push(req.settings); stored = { ...stored, ...req.settings }; }
-    queueMicrotask(() => p.context.__agyPowertoolsReceive(req.id, req.method.startsWith('settings.') ? stored : {}));
-  };
-  vm.runInContext(source, p.context);
-  return { ...p, properties, writes, env, setStored: patch => { stored = { ...stored, ...patch }; } };
-}
-
-test('本地字体保存后立即应用，清空、总开关和卸载均恢复客户端样式', async () => {
-  const p = fontPage();
-  await new Promise(resolve => setImmediate(resolve));
-  await p.env.change({ customFontWeight: 500 });
-  assert.equal(p.properties.get('--agy-custom-weight'), '500');
-  assert.equal(p.properties.has('--agy-custom-font'), false);
-  await p.env.change({ customFont: 'Maple Mono NF CN' });
-  assert.equal(p.env.settingsError(), '');
-  assert.equal(p.context.__agyPowertools.settings.customFont, 'Maple Mono NF CN');
-  assert.equal(p.properties.get('--agy-custom-font'), '"Maple Mono NF CN"');
-  assert.equal(p.document.documentElement.hasAttribute('data-agy-custom-font'), true);
-  await p.env.change({ enabled: false });
-  assert.equal(p.properties.has('--agy-custom-font'), false);
-  assert.equal(p.document.documentElement.hasAttribute('data-agy-custom-font'), false);
-  await p.env.change({ enabled: true });
-  assert.equal(p.properties.get('--agy-custom-font'), '"Maple Mono NF CN"');
-  await p.env.change({ customFont: '' });
-  assert.equal(p.properties.has('--agy-custom-font'), false);
-  await p.env.change({ customFont: 'Maple Mono NF CN' });
-  p.context.__agyPowertools.dispose();
-  assert.equal(p.properties.has('--agy-custom-font'), false);
-  assert.equal(p.document.documentElement.hasAttribute('data-agy-custom-font'), false);
-});
-
-test('不存在或格式错误的字体明确报错，不保存、不覆盖已生效字体', async () => {
-  const p = fontPage({ customFont: 'Maple Mono NF CN' });
-  await new Promise(resolve => setImmediate(resolve));
-  for (const customFont of ['Missing Font', 'Maple\nMono', 'Inter;serif', 'Bad\\Font', 123]) {
-    await p.env.change({ customFont });
-    assert.match(p.env.customFontError(), /字体/);
-    assert.equal(p.writes.length, 0);
-    assert.equal(p.properties.get('--agy-custom-font'), '"Maple Mono NF CN"');
-  }
-  await p.env.change({ customFont: '' });
-  assert.equal(p.env.settingsError(), '');
-  p.context.__agyPowertools.dispose();
-});
-
-test('旧设置中的字体在本机不可用时显示错误，清空后可以恢复', async () => {
-  const p = fontPage({ customFont: 'Missing Font' });
-  await new Promise(resolve => setImmediate(resolve));
-  assert.match(p.env.customFontError(), /未检测到本地字体/);
-  assert.equal(p.document.documentElement.hasAttribute('data-agy-custom-font'), false);
-  await p.env.change({ customFont: '' });
-  assert.equal(p.env.settingsError(), '');
-  p.context.__agyPowertools.dispose();
-});
-
-test('字体检测错误不污染代理保存，语言切换及安装后同名重试可恢复', async () => {
-  const p = fontPage({ customFont: 'Missing Font' });
-  await new Promise(resolve => setImmediate(resolve));
-  assert.match(p.env.customFontError(), /未检测到/);
-  await p.env.change({ proxyUrl: 'http://127.0.0.1:7890', proxyEnabled: true });
-  assert.equal(p.env.settingsError(), '');
-  assert.equal(p.env.options().proxyUrl, 'http://127.0.0.1:7890');
-  await p.env.change({ language: 'en' });
-  await new Promise(resolve => setImmediate(resolve));
-  assert.match(p.env.customFontError(), /Local font/);
-  p.context.queryLocalFonts = async () => [{ family: 'Missing Font' }];
-  p.context.navigator = { permissions: { query: async () => ({ state: 'granted' }) } };
-  await p.env.change({ customFont: 'Missing Font' });
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(p.env.customFontError(), '');
-  assert.equal(p.document.documentElement.hasAttribute('data-agy-custom-font'), true);
-  p.context.__agyPowertools.dispose();
-});
-
-test('系统字体清单规范化去重，接受 Canvas 同宽的已安装字体，并保留读取错误', async () => {
-  const p = fontPage();
-  await new Promise(resolve => setImmediate(resolve));
-  p.context.queryLocalFonts = async () => [
-    { family: ' Inter ' }, { family: 'Inter' }, { family: 'System' },
-    { family: '' }, { family: 'bad\nfont' }, { family: 'x'.repeat(129) }, { family: null }
-  ];
-  const families = await p.env.loadLocalFonts();
-  assert.deepEqual(Array.from(families), ['Inter', 'System']);
-  await p.env.change({ customFont: 'inter' });
-  assert.equal(p.env.customFontError(), '');
-  assert.equal(p.env.options().customFont, 'inter');
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(p.properties.get('--agy-custom-font'), '"inter"');
-  p.context.queryLocalFonts = async () => [];
-  await assert.rejects(p.env.loadLocalFonts, /未读取到/);
-  p.context.queryLocalFonts = async () => { throw new Error('权限被拒绝'); };
-  await assert.rejects(p.env.loadLocalFonts, /权限被拒绝/);
-  delete p.context.queryLocalFonts;
-  await assert.rejects(p.env.loadLocalFonts, /不支持读取/);
-  p.context.__agyPowertools.dispose();
-});
-
-test('权限接口异常或缺少用户手势时继续核验字形，并保留失败原因', async () => {
-  for (const mode of ['unsupported-name', 'missing-method', 'security-error']) {
-    const p = fontPage();
-    await new Promise(resolve => setImmediate(resolve));
-    p.context.queryLocalFonts = async () => { throw new Error('SecurityError: requires user activation'); };
-    p.context.navigator = { permissions: mode === 'missing-method' ? {} : {
-      query: async () => { if (mode === 'unsupported-name') throw new TypeError('Unsupported permission local-fonts'); return { state: 'granted' }; }
-    } };
-    await p.env.change({ customFont: 'Maple Mono NF CN' });
-    assert.equal(p.env.customFontError(), '');
-    assert.equal(p.properties.get('--agy-custom-font'), '"Maple Mono NF CN"');
-    if (mode !== 'missing-method') assert.match(p.env.customFontNotice(), /Unsupported permission|SecurityError/);
-    await p.env.change({ customFont: 'Missing Font' });
-    assert.match(p.env.customFontError(), /未检测到/);
-    if (mode !== 'missing-method') assert.match(p.env.customFontError(), /Unsupported permission|SecurityError/);
-    assert.equal(p.env.options().customFont, 'Maple Mono NF CN');
-    p.context.__agyPowertools.dispose();
-  }
-});
-
-test('await 字体保存返回后已清除旧运行时错误并完成样式同步', async () => {
-  const p = fontPage({ customFont: 'Missing Font' });
-  await new Promise(resolve => setImmediate(resolve));
-  assert.match(p.env.customFontError(), /未检测到/);
-  await p.env.change({ customFont: 'Maple Mono NF CN' });
-  assert.equal(p.env.customFontError(), '');
-  assert.equal(p.properties.get('--agy-custom-font'), '"Maple Mono NF CN"');
-  p.context.__agyPowertools.dispose();
-});
-
-test('异步字体检测完成后不覆盖已关闭的插件，也不会在卸载后重新加样式', async () => {
-  const p = fontPage();
-  await new Promise(resolve => setImmediate(resolve));
-  let resolveFonts;
-  p.context.queryLocalFonts = () => new Promise(resolve => { resolveFonts = resolve; });
-  p.context.navigator = { permissions: { query: async () => ({ state: 'granted' }) } };
-  // 通过外部同步设置触发检测，而非阻塞保存中的验证。
-  p.setStored({ customFont: 'Inter' });
-  await p.env.change({ language: 'en' });
-  await new Promise(resolve => setImmediate(resolve));
-  await p.env.change({ enabled: false });
-  resolveFonts([{ family: 'Inter' }]);
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(p.properties.has('--agy-custom-font'), false);
-  p.context.__agyPowertools.dispose();
-  assert.equal(p.document.documentElement.hasAttribute('data-agy-custom-font'), false);
-});
-
 test('multi-pane conversations with multiple composers stay healthy without triggering reload loops', () => {
   const p = page(true);
   p.context.location.pathname = '/c/conv-1';
@@ -457,92 +291,7 @@ test('Powertools sidebar entry repositions after /customizations once /customiza
   assert.equal(children.find(c => c.dataset?.agyPowertoolsRoot === 'management')?.isConnected, false);
 });
 
-test('cold-start proxy prompt banner appears on mismatch, handles unreachable port, dismisses, and cleans up on dispose', async () => {
-  const p = page(true);
-  const bodyChildren = [];
-  const makeEl = () => {
-    const listeners = new Map();
-    const el = {
-      dataset: {},
-      children: [],
-      isConnected: false,
-      textContent: '',
-      append(...items) {
-        for (const item of items) {
-          item.isConnected = true;
-          this.children.push(item);
-        }
-      },
-      setAttribute() {},
-      addEventListener(type, fn) { listeners.set(type, fn); },
-      click() { listeners.get('click')?.(); },
-      remove() {
-        this.isConnected = false;
-        const idx = bodyChildren.indexOf(this);
-        if (idx >= 0) bodyChildren.splice(idx, 1);
-      }
-    };
-    return el;
-  };
-  p.document.createElement = () => makeEl();
-  p.document.body = {
-    append(el) { el.isConnected = true; bodyChildren.push(el); }
-  };
-
-  const sent = [];
-  p.context.__agyPowertoolsHost = payload => {
-    const req = JSON.parse(payload);
-    sent.push(req);
-    queueMicrotask(() => {
-      if (req.method === 'settings.get') {
-        p.context.__agyPowertoolsReceive(req.id, { enabled: true, proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897', language: 'zh-CN' });
-      } else if (req.method === 'proxy.status') {
-        p.context.__agyPowertoolsReceive(req.id, {
-          configured: true,
-          configuredUrl: 'http://127.0.0.1:7897',
-          configuredDisplayUrl: 'http://127.0.0.1:7897',
-          configuredForceHttp1: false,
-          active: false,
-          mismatch: true,
-          reason: 'not-applied',
-          canRelaunch: true
-        });
-      } else if (req.method === 'proxy.relaunch') {
-        p.context.__agyPowertoolsReceive(req.id, req.force
-          ? { ok: true, relaunching: true, proxyActive: true }
-          : { ok: false, portUnreachable: true, message: '代理端口 127.0.0.1:7897 无法连接' });
-      }
-    });
-  };
-  p.context.__agyInitialSettings = { enabled: true, proxyEnabled: true, proxyUrl: 'http://127.0.0.1:7897', language: 'zh-CN' };
-  vm.runInContext(source, p.context);
-  await new Promise(resolve => setTimeout(resolve, 20));
-
-  const findBanner = () => bodyChildren.find(el => el.dataset.testid === 'agy-proxy-prompt-banner');
-  const findBtn = (banner, testId) => banner?.children?.flatMap(c => c.children || []).find(b => b.dataset?.testid === testId);
-
-  let banner = findBanner();
-  assert.ok(banner);
-  assert.ok(banner.children[0].textContent.includes('http://127.0.0.1:7897'));
-  assert.equal(banner.children[0].textContent.includes('\u00b7'), false);
-
-  // Clicking relaunch when port is closed warns instead of restarting immediately
-  findBtn(banner, 'agy-proxy-banner-relaunch').click();
-  await new Promise(resolve => setTimeout(resolve, 20));
-  banner = findBanner();
-  assert.ok(banner);
-  assert.ok(banner.children[0].textContent.includes('无法连接'));
-  assert.ok(findBtn(banner, 'agy-proxy-banner-force'));
-
-  // Dismiss removes banner cleanly
-  findBtn(banner, 'agy-proxy-banner-dismiss').click();
-  assert.equal(findBanner(), undefined);
-
-  p.context.__agyPowertools.dispose();
-  assert.equal(bodyChildren.some(el => el.dataset.testid === 'agy-proxy-prompt-banner'), false);
-});
-
-test('native-bindings resolves 2.34.0 notification hook without type:"add" and stays optional when absent', () => {
+test('native-bindings resolves 2.34.0 notification hook without type:"add" and provides fallback when absent', () => {
   const bindingsSource = readFileSync(new URL('../lib/native-bindings.js', import.meta.url), 'utf8');
   const makeEnv = (toastHook, jcImpl = null) => {
     const Sy = () => null; Sy.displayName = 'CompactTooltipBaseUi';
@@ -577,7 +326,6 @@ test('native-bindings resolves 2.34.0 notification hook without type:"add" and s
       LN: s => JSON.stringify({ version:1, singleParagraph: s, type:"root" }),
       ...(toastHook ? { kn: toastHook } : {})
     });
-    // Ensure resolveFn contains exact matcher literal checkpointConfig=void 0
     vm.runInContext(`resolveFn = function(checkpointConfig=void 0){ const x=Kc(Proto.CascadeConfigSchema, checkpointConfig); return { lookupCustomModelInfo: x, customModelInfoOverride: 1 }; };`, ctx);
     vm.runInContext(bindingsSource, ctx);
     return ctx.__agyResolveNativeBindings([]);
@@ -589,11 +337,13 @@ test('native-bindings resolves 2.34.0 notification hook without type:"add" and s
   assert.equal(resolved234.names.um, 'kn');
   assert.equal(resolved234.bindings.um, toast234);
 
-  // Absent toast hook degrades gracefully without throwing
+  // Absent toast hook degrades gracefully to self-contained fallback without throwing
   const resolvedNoToast = makeEnv(null);
-  assert.equal(resolvedNoToast.bindings.um, undefined);
+  assert.equal(resolvedNoToast.names.um, undefined);
+  assert.equal(typeof resolvedNoToast.bindings.um, 'function');
+  assert.ok(resolvedNoToast.degraded.includes('um'));
 
-  // 2.35.0 style JC (scrollContainerClassName removed, keeps arrowNavigable + matchTriggerWidth + collisionAvoidance / contentRef.current=)
+  // 2.35.0 style JC
   const jc235 = function LQ({ arrowNavigable: l, matchTriggerWidth: k, collisionAvoidance: n }) { const y = { contentRef: {} }; y.contentRef.current = l || k || n; return y; };
   const resolved235 = makeEnv(toast234, jc235);
   assert.equal(resolved235.names.JC, 'JC');
@@ -1096,7 +846,7 @@ test('userBubbleStrength updates CSS variables and readable foreground contrast,
   assert.equal(styleProps.has('--agy-bubble-fg'), false);
 });
 
-test('titlebarQuickPanel mounts left of titlebar-more-actions, falls back to overview/aux toggles, and unmounts when disabled', async () => {
+test('Powertools management trigger falls back to titlebar actions when sidebar links are absent', async () => {
   const makeTitlebarEnv = (selectors) => {
     const p = page(true);
     const mounts = [];
@@ -1124,51 +874,48 @@ test('titlebarQuickPanel mounts left of titlebar-more-actions, falls back to ove
     let capturedEnv = null;
     p.context.__agyPanels = env => {
       capturedEnv = env;
-      return { Page: () => null, Sidebar: () => null, QuickPopover: () => null, dispose() {} };
+      return { Page: () => null, Sidebar: () => null, dispose() {} };
     };
     p.document.querySelector = sel => {
-      if (sel === '[data-testid="titlebar-more-actions"]' && selectors.more) return anchors.more;
-      if (sel === '[data-testid="toggle-overview-panel"]' && selectors.overview) return anchors.overview;
-      if (sel === '[data-testid="toggle-aux-sidebar"]' && selectors.aux) return anchors.aux;
+      if (sel.includes('titlebar-more-actions') && selectors.more) return anchors.more;
+      if (sel.includes('toggle-overview-panel') && selectors.overview) return anchors.overview;
+      if (sel.includes('toggle-aux-sidebar') && selectors.aux) return anchors.aux;
       return null;
     };
     return { p, mounts, anchors, parent, getUnmounted: () => unmounted, getEnv: () => capturedEnv };
   };
 
   const primary = makeTitlebarEnv({ more: true, overview: true, aux: true });
-  let currentSettings = { enabled: true, titlebarQuickPanel: true };
+  let currentSettings = { enabled: true };
   primary.p.context.__agyPowertoolsHost = raw => {
     const req = JSON.parse(raw);
     queueMicrotask(() => {
       if (req.method === 'settings.set') {
         currentSettings = { ...currentSettings, ...req.settings };
-        primary.p.context.__agyPowertoolsReceive(req.id, currentSettings);
+        primary.p.context.__agyPowertoolsReceive?.(req.id, currentSettings);
       } else if (req.method === 'settings.get') {
-        primary.p.context.__agyPowertoolsReceive(req.id, currentSettings);
+        primary.p.context.__agyPowertoolsReceive?.(req.id, currentSettings);
       } else {
-        primary.p.context.__agyPowertoolsReceive(req.id, {});
+        primary.p.context.__agyPowertoolsReceive?.(req.id, {});
       }
     });
   };
-  primary.p.context.__agyInitialSettings = { enabled: true, titlebarQuickPanel: true };
+  primary.p.context.__agyInitialSettings = { enabled: true };
   vm.runInContext(source, primary.p.context);
   assert.equal(primary.mounts.length, 1);
-  assert.equal(primary.mounts[0].node.dataset.agyPowertoolsRoot, 'titlebar-quick');
+  assert.equal(primary.mounts[0].node.dataset.agyPowertoolsRoot, 'management');
   assert.equal(primary.mounts[0].before, primary.anchors.more);
-
-  await primary.getEnv().change({ titlebarQuickPanel: false });
-  assert.equal(primary.getUnmounted(), 1);
   primary.p.context.__agyPowertools.dispose();
 
   const fallback = makeTitlebarEnv({ more: false, overview: false, aux: true });
-  fallback.p.context.__agyInitialSettings = { enabled: true, titlebarQuickPanel: true };
+  fallback.p.context.__agyInitialSettings = { enabled: true };
   vm.runInContext(source, fallback.p.context);
   assert.equal(fallback.mounts.length, 1);
   assert.equal(fallback.mounts[0].before, fallback.anchors.aux);
   fallback.p.context.__agyPowertools.dispose();
 });
 
-test('composerWorkingBeam cross-fades with ComposerQuotaHalo when active and stays idle/unmounted cleanly', async () => {
+test('ComposerQuotaHalo renders pure SVG border with quota percentage and unmounts cleanly on dispose', async () => {
   const p = page(true);
   const renderedTrees = [];
   let unmounted = 0;
@@ -1213,34 +960,29 @@ test('composerWorkingBeam cross-fades with ComposerQuotaHalo when active and sta
     }
   };
   p.document.querySelectorAll = sel => sel === '[data-testid="model-selector-trigger"]' ? [model] : [];
-  let execStatus = 1;
-  p.context.__agyNativeAdapter.composerCascadeId = () => 'conv-beam-1';
-  p.context.__agyNativeAdapter.executionState = cid => cid === 'conv-beam-1' ? { conversationId: cid, status: execStatus, notFullyIdle: false } : null;
+  p.context.__agyNativeAdapter.composerCascadeId = () => 'conv-halo-1';
+  p.context.__agyNativeAdapter.executionState = cid => cid === 'conv-halo-1' ? { conversationId: cid, status: 1, notFullyIdle: false } : null;
   p.context.__agyNativeAdapter.service = () => ({
     retrieveUserQuotaSummary: async () => ({
       response: { groups: [{ displayName: 'Gemini Models', buckets: [{ bucketId: 'g-5h', window: '5h', remainingFraction: 0.72 }] }] }
     })
   });
-  let currentSettings = { enabled: true, composerQuotaHalo: true, composerWorkingBeam: true, composerWorkingBeamPalette: 'aurora' };
+  let currentSettings = { enabled: true, composerQuotaHalo: true };
   p.context.__agyPowertoolsHost = raw => {
     const req = JSON.parse(raw);
     queueMicrotask(() => {
       if (req.method === 'settings.set') {
         currentSettings = { ...currentSettings, ...req.settings };
-        p.context.__agyPowertoolsReceive(req.id, currentSettings);
+        p.context.__agyPowertoolsReceive?.(req.id, currentSettings);
       } else if (req.method === 'settings.get') {
-        p.context.__agyPowertoolsReceive(req.id, currentSettings);
+        p.context.__agyPowertoolsReceive?.(req.id, currentSettings);
       } else {
-        p.context.__agyPowertoolsReceive(req.id, {});
+        p.context.__agyPowertoolsReceive?.(req.id, {});
       }
     });
   };
-  let capturedPanelsEnv = null;
   p.context.__agyNativeAdapter.installPage = () => true;
-  p.context.__agyPanels = env => {
-    capturedPanelsEnv = env;
-    return { Page: () => null, Sidebar: () => null, dispose() {} };
-  };
+  p.context.__agyPanels = () => ({ Page: () => null, Sidebar: () => null, dispose() {} });
   p.context.__agyInitialSettings = { ...currentSettings };
   vm.runInContext(source, p.context);
   await new Promise(r => setTimeout(r, 30));
@@ -1280,32 +1022,13 @@ test('composerWorkingBeam cross-fades with ComposerQuotaHalo when active and sta
   };
 
   assert.ok(renderedTrees.length >= 1);
-  // 1. Idle state: quota halo full brightness (not dimmed), working beam inactive
   const idleTree = renderNode(renderedTrees.at(-1));
   const idleQuota = findById(idleTree, 'agy-composer-quota-halo');
-  const idleBeam = findById(idleTree, 'agy-composer-working-beam');
   assert.ok(idleQuota);
-  assert.equal(idleQuota.props['data-dimmed'], undefined);
-  assert.ok(idleBeam);
-  assert.equal(idleBeam.props['data-active'], 'false');
-  assert.equal(idleBeam.props['data-palette'], 'aurora');
-
-  // 2. Preview toggle forces beam active and completely hides quota halo even while idle
-  assert.equal(source.includes('.agy-quota-halo-svg[data-dimmed=true]{opacity:0}'), true);
-  capturedPanelsEnv.setBeamPreview(true);
-  const previewTree = renderNode(renderedTrees.at(-1));
-  assert.equal(findById(previewTree, 'agy-composer-quota-halo').props['data-dimmed'], 'true');
-  assert.equal(findById(previewTree, 'agy-composer-working-beam').props['data-active'], 'true');
-  capturedPanelsEnv.setBeamPreview(false);
-  assert.equal(findById(renderNode(renderedTrees.at(-1)), 'agy-composer-working-beam').props['data-active'], 'false');
-
-  // 3. Running state: Plan A cross-fade hides quota halo and activates beam
-  execStatus = 2;
-  const activeTree = renderNode(renderedTrees.at(-1));
-  const activeQuota = findById(activeTree, 'agy-composer-quota-halo');
-  const activeBeam = findById(activeTree, 'agy-composer-working-beam');
-  assert.equal(activeQuota.props['data-dimmed'], 'true');
-  assert.equal(activeBeam.props['data-active'], 'true');
+  assert.equal(idleQuota.props['data-percent'], '72');
+  assert.equal(idleQuota.props['data-window'], '5h');
+  assert.equal(idleQuota.props['data-tone'], 'ok');
+  assert.equal(findById(idleTree, 'agy-composer-working-beam'), null);
 
   p.context.__agyPowertools.dispose();
   assert.ok(unmounted >= 1);
@@ -1333,82 +1056,6 @@ test('SSH command paste observes setting changes without reinstalling its listen
   assert.equal(enabled(), true);
   assert.equal(installs, 1);
   p.context.__agyPowertools.dispose();
-});
-
-test('sidebar folder drop observes setting changes, checks local Electron support, excludes SSH windows, and initializes global toast via sidebar', async () => {
-  const p = page(true);
-  const settings = { enabled: true };
-  p.context.__agyInitialSettings = settings;
-  let change, dropOpts, installs = 0;
-  const createProjectCalls = [];
-  p.context.electronNative = { getPathForFile: f => f?.mockPath || '' };
-  p.context.__agyNativeAdapter.installPage = () => true;
-  p.context.__agyNativeAdapter.createProjectsFromDroppedEntries = (entries, opts) => {
-    createProjectCalls.push({ entries, opts });
-    return { created: entries, existing: [], skippedFiles: 0, pinned: Boolean(opts?.pin) };
-  };
-  p.context.__agyPanels = env => { change = env.change; return { Page: () => null, Sidebar: () => null, dispose() {} }; };
-  p.context.installSidebarFolderDrop = (_document, opts) => { dropOpts = opts; installs++; };
-  p.context.__agyPowertoolsHost = raw => {
-    const { id, method, settings: patch } = JSON.parse(raw);
-    if (method === 'settings.set') Object.assign(settings, patch);
-    queueMicrotask(() => p.context.__agyPowertoolsReceive?.(id, { ...settings }));
-  };
-  vm.runInContext(source, p.context);
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(installs, 1);
-  assert.equal(dropOpts.enabled(), true);
-  assert.equal(dropOpts.pinProject(), false);
-  assert.equal(dropOpts.isSupported(), true);
-  assert.equal(dropOpts.getPathForFile({ mockPath: '/fixtures/team/app' }), '/fixtures/team/app');
-  await change({ sidebarFolderDropPin: true });
-  assert.equal(dropOpts.pinProject(), true);
-  dropOpts.createProjects([{ path: '/fixtures/team/app' }], { pin: true });
-  assert.deepEqual(createProjectCalls.at(-1)?.opts, { pin: true });
-  const styleNode = p.nodes.find(n => 'agyDensityStyle' in (n.dataset || {}));
-  assert.match(styleNode?.textContent || '', /@keyframes agy-project-drop-highlight/);
-  assert.match(styleNode?.textContent || '', /\[data-agy-project-highlight="true"\]/);
-  await change({ sidebarFolderDrop: false });
-  assert.equal(dropOpts.enabled(), false);
-  await change({ sidebarFolderDrop: true });
-  assert.equal(dropOpts.enabled(), true);
-  p.context.sshRemote = { kind: 'ssh' };
-  assert.equal(dropOpts.isSupported(), false);
-  p.context.sshRemote = { kind: 'local' };
-  assert.equal(dropOpts.isSupported(), true);
-  delete p.context.electronNative;
-  assert.equal(dropOpts.isSupported(), false);
-  p.context.__agyPowertools.dispose();
-
-  // Verify SidebarEntry initializes global toast even without a mounted conversation composer
-  const pToast = page(true);
-  const toasts = [];
-  const custLink = { isConnected: true, nextSibling: null, parentElement: { insertBefore(n) { n.isConnected = true; } } };
-  pToast.document.querySelector = sel => sel === 'a[href="/customizations"]' ? custLink : null;
-  pToast.context.electronNative = { getPathForFile: f => f?.mockPath || '' };
-  pToast.context.React = {
-    createElement: (type, props, ...children) => ({ type, props, children }),
-    useEffect: fn => { fn(); }
-  };
-  pToast.context.ReactDOM = {
-    createRoot: () => ({
-      render(tree) {
-        if (typeof tree?.type === 'function') tree.type(tree.props || {});
-      },
-      unmount() {}
-    })
-  };
-  pToast.context.um = () => payload => toasts.push(payload);
-  let sidebarDropOpts;
-  pToast.context.installSidebarFolderDrop = (_document, opts) => { sidebarDropOpts = opts; };
-  pToast.context.__agyNativeAdapter.wrap = el => el;
-  pToast.context.__agyNativeAdapter.installPage = () => true;
-  pToast.context.__agyPanels = () => ({ Page: () => null, Sidebar: () => null, dispose() {} });
-  pToast.context.__agyInitialSettings = { enabled: true };
-  vm.runInContext(source, pToast.context);
-  sidebarDropOpts.notify({ title: 'Project created', message: 'demo' });
-  assert.deepEqual(toasts, [{ title: 'Project created', message: 'demo' }]);
-  pToast.context.__agyPowertools.dispose();
 });
 
 test('long-conversation mount skips redundant document style writes, skips unchanged root renders, and defers during IME/touch', async () => {
@@ -2522,20 +2169,14 @@ test('native-ui retries applyOptions after transient boot failure and re-applies
   assert.equal(settingsGetCount, beforeRetryCount + 1);
   assert.equal(applied.enabled, true);
   assert.equal(applied.stageUpdates, true);
-  assert.equal(applied.efficientIO, false);
-  assert.equal(applied.contextLimit, 500000);
-  assert.equal(applied.sidebarProjectLimit, 5);
 
   // Simulate another window updating settings; state poll returns updated settings and must re-apply adapter options.
-  remoteSettings = { enabled: true, stageUpdates: false, efficientIO: true, contextLimit: 1000000, sidebarProjectLimit: 3 };
+  remoteSettings = { enabled: true, stageUpdates: false };
   mainPoll.fn();
   await new Promise(r => setImmediate(r));
   await new Promise(r => setImmediate(r));
 
   assert.equal(applied.stageUpdates, false);
-  assert.equal(applied.efficientIO, true);
-  assert.equal(applied.contextLimit, 1000000);
-  assert.equal(applied.sidebarProjectLimit, 3);
 
   ctx.__agyPowertools.dispose();
 });
@@ -2770,21 +2411,6 @@ test('management Page keeps header and tabs sticky on scroll, toggles scrolled b
 
   const settingsPage = renderTab('settings');
   assert.equal(settingsPage.props['data-sticky-filter'], undefined);
-
-  // QuickPopover uses .pt-qp / .pt-qp-scroll rather than .pt-page, keeping sticky filter bars scoped to .pt-page only
-  stateIdx = 50;
-  refIdx = 50;
-  let qpTree = panels.QuickPopover();
-  qpTree.children[0].props.onOpenChange(true);
-  stateIdx = 50;
-  refIdx = 50;
-  qpTree = panels.QuickPopover();
-  const qpCard = qpTree.children[0].children[1].children[0];
-  assert.equal(qpCard.props.className, 'pt-qp');
-  assert.equal(qpCard.props['data-sticky-filter'], undefined);
-  assert.equal(qpCard.children[1].props['data-testid'], 'agy-quick-body');
-  assert.equal(qpCard.children[1].props.className, 'pt-qp-scroll');
-  assert.equal(findByTestId(qpTree, 'agy-management-page'), null);
 
   for (const cleanup of cleanups) cleanup();
   assert.equal(pageListeners.get('scroll')?.length, 0);
