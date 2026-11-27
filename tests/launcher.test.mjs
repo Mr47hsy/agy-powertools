@@ -311,7 +311,7 @@ test('Sidecar Aux Pane Web UI serves post-update prompt copy, enforces token aut
     s.once('error', reject);
     s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); });
   });
-  let relaunched = 0, checked = 0, installedVer = '', savedAutoRelaunch = true;
+  let relaunched = 0, checked = 0, installedVer = '', savedAutoRelaunch = true, savedEnabled = true;
   const close = await startSidecarWebUi({
     port: freePort,
     token: 'secret-token',
@@ -321,26 +321,30 @@ test('Sidecar Aux Pane Web UI serves post-update prompt copy, enforces token aut
       compatibilityError: 'Antigravity compatibility: um (missing)',
       clientVersion: '2.34.0',
       connected: true,
-      enabled: true,
+      enabled: savedEnabled,
       autoRelaunch: savedAutoRelaunch,
-      macAutoRelaunch: savedAutoRelaunch,
-      language: 'zh-CN'
+      macAutoRelaunch: savedAutoRelaunch
     }),
     onRelaunch: async () => { relaunched++; return { scheduled: true }; },
     onSetSettings: async patch => {
-      savedAutoRelaunch = Boolean(patch.autoRelaunch ?? patch.macAutoRelaunch);
-      return { autoRelaunch: savedAutoRelaunch, macAutoRelaunch: savedAutoRelaunch };
+      if (typeof patch.enabled === 'boolean') savedEnabled = patch.enabled;
+      if (typeof (patch.autoRelaunch ?? patch.macAutoRelaunch) === 'boolean') {
+        savedAutoRelaunch = Boolean(patch.autoRelaunch ?? patch.macAutoRelaunch);
+      }
+      return { enabled: savedEnabled, autoRelaunch: savedAutoRelaunch, macAutoRelaunch: savedAutoRelaunch };
     },
     onCheckUpdate: async () => { checked++; return { status: 'available', version: '2.13.1', canInstall: true, releaseUrl: 'https://github.com/Mr47hsy/agy-powertools/releases/tag/v2.13.1' }; },
     onInstallUpdate: async ({ version }) => { installedVer = version; return { status: 'preparing', version }; },
     onUpdateStatus: async () => ({ status: installedVer ? 'installing' : 'idle', version: installedVer })
   });
   try {
-    const html = renderAuxPaneHtml({ version: '2.13.0', language: 'zh-CN' });
+    const html = renderAuxPaneHtml({ version: '2.13.0' });
     assert.ok(html.includes('需要重启 Antigravity 以启用 Powertools 插件'));
     assert.ok(html.includes('复制启动命令'));
     assert.ok(html.includes('检查插件更新'));
     assert.ok(html.includes('复制诊断信息'));
+    assert.ok(html.includes('id="powertools-enabled-row"'));
+    assert.ok(html.includes('id="powertools-enabled-toggle"'));
     assert.ok(html.includes('id="mac-auto-relaunch-row"'));
     assert.ok(html.includes('id="mac-auto-relaunch-toggle"'));
     assert.ok(html.includes("data.mode !== 'ssh-remote'"));
@@ -365,6 +369,23 @@ test('Sidecar Aux Pane Web UI serves post-update prompt copy, enforces token aut
     });
     assert.equal(okSettings.status, 200);
     assert.equal(savedAutoRelaunch, false);
+
+    // Master enabled toggle works when paused and re-enables cleanly via Sidecar Web UI
+    const pauseRes = await fetch(`http://127.0.0.1:${freePort}/api/settings`, {
+      method: 'POST',
+      headers: { 'x-sidecar-token': 'secret-token', 'Content-Type': 'application/json' },
+      body: '{"enabled":false}'
+    });
+    assert.equal(pauseRes.status, 200);
+    assert.equal(savedEnabled, false);
+    assert.equal((await (await fetch(`http://127.0.0.1:${freePort}/api/status?token=secret-token`)).json()).enabled, false);
+    const resumeRes = await fetch(`http://127.0.0.1:${freePort}/api/settings`, {
+      method: 'POST',
+      headers: { 'x-sidecar-token': 'secret-token', 'Content-Type': 'application/json' },
+      body: '{"enabled":true}'
+    });
+    assert.equal(resumeRes.status, 200);
+    assert.equal(savedEnabled, true);
 
     const unauth = await fetch(`http://127.0.0.1:${freePort}/api/status`);
     assert.equal(unauth.status, 401);

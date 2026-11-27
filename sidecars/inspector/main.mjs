@@ -90,7 +90,11 @@ if (isDirectRun) {
       };
     },
     onRelaunch: () => remoteSsh ? { scheduled: false, reason: 'ssh-remote' } : scheduleRelaunchWithDebugPort({ dataDir: paths.data, home: paths.home }),
-    onSetSettings: patch => settings.set(patch),
+    onSetSettings: async patch => {
+      const saved = settings.set(patch);
+      await stop.syncSettings?.();
+      return saved;
+    },
     onCheckUpdate: () => checkForUpdates({ currentVersion: version }),
     onInstallUpdate: ({ version: expectedVersion } = {}) => startUpdate({ currentVersion: version, expectedVersion }),
     onUpdateStatus: () => updateStatus(undefined, version)
