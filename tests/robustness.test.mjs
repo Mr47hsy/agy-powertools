@@ -10,7 +10,6 @@ import { readDatabase } from '../lib/database.mjs';
 
 test('total minification simulation: zero matched native bindings never throws, supplies atomic fallbacks, and boots UI cleanly', () => {
   const bindingsCode = readFileSync(new URL('../lib/native-bindings.js', import.meta.url), 'utf8');
-  const i18nCode = readFileSync(new URL('../lib/native-i18n.js', import.meta.url), 'utf8');
   const clientCode = readFileSync(new URL('../lib/native-client.js', import.meta.url), 'utf8');
   const panelsCode = readFileSync(new URL('../lib/native-panels.js', import.meta.url), 'utf8');
   const uiCode = readFileSync(new URL('../lib/native-ui.js', import.meta.url), 'utf8');
@@ -110,12 +109,12 @@ test('total minification simulation: zero matched native bindings never throws, 
   assert.equal(b.HU({ stepIndex: 12 }), 12);
   assert.equal(b.HU({ index: 19 }), 19);
 
-  // Boot i18n + client + panels + UI with zero native bindings and zero createFileRoute (mirrors native-host.mjs closure)
+  // Boot client + panels + UI with zero native bindings and zero createFileRoute (mirrors native-host.mjs closure)
   ctx.__agyNativeBindings = resolved.bindings;
   ctx.__agyNativeBindingNames = resolved.names;
   ctx.__agyDegradedBindings = resolved.degraded;
   const aliases = ['B', 'HC', 'IC', 'JC', 'KC', 'GC', 'Uy', 'XP', 'UP', 'TP', 'VP', 'dq', 'k0', 'Sy', 'kT', 'lT', 'mT', 'nT', 'um', 'HU', 'I', 'tc', 'Wb', 'IJ', 'LN', 'VD', 'Wz', 'YF', 'MUa', 'Gy', 'Shd'];
-  vm.runInContext(`(function({${aliases.join(',')}}){\n${i18nCode}\n${clientCode}\n${panelsCode}\n${uiCode}\n})(__agyNativeBindings);`, ctx);
+  vm.runInContext(`(function({${aliases.join(',')}}){\n${clientCode}\n${panelsCode}\n${uiCode}\n})(__agyNativeBindings);`, ctx);
 
   assert.ok(ctx.__agyPowertools, 'Powertools must still boot when all native UI bindings degrade');
   const status = ctx.__agyPowertools.status;
@@ -126,7 +125,6 @@ test('total minification simulation: zero matched native bindings never throws, 
 });
 
 test('router break, secondary DOM anchors, and sidebar menu DOM fallback all work when native hooks are absent', async () => {
-  const i18nCode = readFileSync(new URL('../lib/native-i18n.js', import.meta.url), 'utf8');
   const uiCode = readFileSync(new URL('../lib/native-ui.js', import.meta.url), 'utf8');
 
   const renderedMounts = new Map();
@@ -328,7 +326,6 @@ test('router break, secondary DOM anchors, and sidebar menu DOM fallback all wor
     }
   });
 
-  vm.runInContext(i18nCode, ctx);
   vm.runInContext(uiCode, ctx);
   await new Promise(r => setImmediate(r));
 

@@ -149,20 +149,7 @@ test('side-question and split-pane composers fetch and render independent contex
   p.context.__agyPowertools.dispose();
 });
 
-test('accountSwitcher respects multiAccount master switch, toggles native settings hide attr, and cleans up on dispose', () => {
-  const pOff = page(true);
-  const offMounts = [];
-  const offSettingsBtn = { isConnected: true, parentElement: { insertBefore(node) { node.isConnected = true; offMounts.push(node); } } };
-  pOff.context.ReactDOM = { createRoot() { return { render() {}, unmount() {} }; } };
-  pOff.context.__agyNativeAdapter.installPage = () => true;
-  pOff.context.__agyPanels = () => ({ Page: () => null, Sidebar: () => null, AccountSwitcher: () => null, dispose() {} });
-  pOff.document.querySelector = sel => sel === '[data-testid="settings-button"]' ? offSettingsBtn : null;
-  pOff.context.__agyInitialSettings = { enabled: true, multiAccount: false, accountSwitcher: true };
-  vm.runInContext(source, pOff.context);
-  assert.equal(offMounts.length, 0);
-  assert.equal(pOff.document.documentElement.hasAttribute('data-agy-account-switcher'), false);
-  pOff.context.__agyPowertools.dispose();
-
+test('native settings button is always preserved untouched without account-switcher injection', () => {
   const p = page(true);
   const mountedNodes = [];
   const settingsBtn = {
@@ -177,22 +164,13 @@ test('accountSwitcher respects multiAccount master switch, toggles native settin
   };
   p.context.ReactDOM = { createRoot() { return { render() {}, unmount() {} }; } };
   p.context.__agyNativeAdapter.installPage = () => true;
-  p.context.__agyPanels = () => ({
-    Page: () => null,
-    Sidebar: () => null,
-    AccountSwitcher: () => null,
-    dispose() {}
-  });
+  p.context.__agyPanels = () => ({ Page: () => null, Sidebar: () => null, dispose() {} });
   p.document.querySelector = sel => sel === '[data-testid="settings-button"]' ? settingsBtn : null;
-  p.context.__agyInitialSettings = { enabled: true, multiAccount: true, accountSwitcher: true };
+  p.context.__agyInitialSettings = { enabled: true };
   vm.runInContext(source, p.context);
-  assert.equal(mountedNodes.length, 1);
-  assert.equal(mountedNodes[0].node.dataset.agyPowertoolsRoot, 'account-switcher');
-  assert.equal(mountedNodes[0].before, settingsBtn);
-  assert.equal(p.document.documentElement.hasAttribute('data-agy-account-switcher'), true);
-  p.context.__agyPowertools.dispose();
-  assert.equal(mountedNodes[0].node.isConnected, false);
+  assert.equal(mountedNodes.length, 0);
   assert.equal(p.document.documentElement.hasAttribute('data-agy-account-switcher'), false);
+  p.context.__agyPowertools.dispose();
 });
 
 test('renderRoot does not repeatedly call insertBefore when before equals existing mount', () => {
@@ -409,126 +387,13 @@ test('overview mounts both progress and overviewQuota in stable order without in
   p.context.__agyPowertools.dispose();
 });
 
-test('startAddAccount awaits active sync and calls accounts.completeAdd, and refreshAccount skips quota.observe on credentialMismatch', async () => {
-  const p = page(true);
-  let capturedEnv = null;
-  let currentEmail = 'alpha@example.com';
-  const calls = [];
-  let mismatchNextSync = false;
-  let quotaRemaining = 0.9;
-
-  p.context.ReactDOM = { createRoot() { return { render() {}, unmount() {} }; } };
-  p.context.__agyNativeAdapter.installPage = () => true;
-  p.context.__agyNativeAdapter.capabilities = () => ({
-    email: currentEmail,
-    name: currentEmail.split('@')[0],
-    plan: 'Google AI Ultra',
-    planId: 'g1-ultra-tier'
-  });
-  p.context.__agyNativeAdapter.service = () => ({
-    retrieveUserQuotaSummary: async () => ({
-      response: {
-        groups: [{
-          displayName: 'Gemini Models',
-          buckets: [{ bucketId: 'gemini-5h', window: '5h', remaining: { case: 'remainingFraction', value: quotaRemaining }, resetTime: null }]
-        }]
-      }
-    })
-  });
-  p.context.__agyNativeAdapter.startAccountLogin = async () => {
-    currentEmail = 'beta@example.com';
-    return { ok: true, email: currentEmail };
-  };
-  p.context.__agyPanels = env => {
-    capturedEnv = env;
-    return { Page: () => null, Sidebar: () => null, AccountSwitcher: () => null, dispose() {} };
-  };
-  p.context.__agyPowertoolsHost = raw => {
-    const req = JSON.parse(raw);
-    calls.push(req);
-    queueMicrotask(() => {
-      if (req.method === 'settings.get') {
-        p.context.__agyPowertoolsReceive(req.id, { enabled: true, multiAccount: true, autoSwitchAccount: true, language: 'zh-CN' });
-      } else if (req.method === 'accounts.autoSwitchCandidate') {
-        p.context.__agyPowertoolsReceive(req.id, { candidate: { id: 'acct-a', email: 'alpha@example.com', name: 'Alpha' }, cooldownRemainingMs: 0 });
-      } else if (req.method === 'accounts.prepareAdd') {
-        p.context.__agyPowertoolsReceive(req.id, { ok: true, backedUpId: 'acct-a', prevCredHash: 'HASH_A', activeId: 'acct-a', accounts: [{ id: 'acct-a', email: 'alpha@example.com', hasCredential: true }] });
-      } else if (req.method === 'accounts.syncActive') {
-        if (mismatchNextSync) {
-          p.context.__agyPowertoolsReceive(req.id, {
-            activeId: 'acct-b',
-            accounts: [{ id: 'acct-b', email: 'beta@example.com', hasCredential: true }],
-            credentialMismatch: { uiEmail: 'beta@example.com', credentialEmail: 'alpha@example.com' }
-          });
-        } else {
-          p.context.__agyPowertoolsReceive(req.id, {
-            activeId: 'acct-b',
-            accounts: [
-              { id: 'acct-a', email: 'alpha@example.com', hasCredential: true },
-              { id: 'acct-b', email: 'beta@example.com', hasCredential: true }
-            ]
-          });
-        }
-      } else if (req.method === 'accounts.completeAdd') {
-        p.context.__agyPowertoolsReceive(req.id, {
-          ok: true,
-          relaunching: false,
-          manualRestartRequired: true,
-          account: { id: 'acct-b', email: 'beta@example.com', name: 'beta' },
-          activeId: 'acct-b',
-          accounts: [
-            { id: 'acct-a', email: 'alpha@example.com', hasCredential: true },
-            { id: 'acct-b', email: 'beta@example.com', hasCredential: true }
-          ]
-        });
-      } else {
-        p.context.__agyPowertoolsReceive(req.id, { ok: true });
-      }
-    });
-  };
-  p.context.__agyInitialSettings = { enabled: true, multiAccount: true, autoSwitchAccount: true, language: 'zh-CN' };
-  vm.runInContext(source, p.context);
-  await new Promise(r => setTimeout(r, 20));
-  assert.ok(capturedEnv);
-
-  // Even when the newly signed-in account has a depleted bucket and autoSwitchAccount is enabled,
-  // startAddAccount suppresses auto-switch so it never races with completeAdd / relaunch.
-  quotaRemaining = 0;
-  const addRes = await capturedEnv.startAddAccount('Backup');
-  assert.equal(addRes.ok, true);
-  assert.equal(addRes.manualRestartRequired, true);
-  assert.equal(calls.some(c => c.method === 'accounts.autoSwitchCandidate'), false);
-  assert.equal(p.context.document.querySelector('[data-testid="agy-autoswitch-banner"]'), null);
-  quotaRemaining = 0.9;
-  const methods = calls.map(c => c.method);
-  const prepIdx = methods.indexOf('accounts.prepareAdd');
-  const syncIdx = methods.lastIndexOf('accounts.syncActive');
-  const completeIdx = methods.indexOf('accounts.completeAdd');
-  assert.ok(prepIdx >= 0 && syncIdx > prepIdx && completeIdx > syncIdx, `Expected prepareAdd -> syncActive -> completeAdd, got ${methods.join(',')}`);
-  const completeCall = calls[completeIdx];
-  assert.equal(completeCall.email, 'beta@example.com');
-  assert.equal(completeCall.prevEmail, 'alpha@example.com');
-  assert.equal(completeCall.prevCredHash, 'HASH_A');
-  assert.equal(completeCall.relaunch, true);
-
-  // When syncActive reports credentialMismatch, refreshAccount MUST NOT call quota.observe
-  const beforeObserve = calls.filter(c => c.method === 'quota.observe').length;
-  mismatchNextSync = true;
-  await capturedEnv.refreshAccountQuotas('acct-b');
-  const afterObserve = calls.filter(c => c.method === 'quota.observe').length;
-  assert.equal(afterObserve, beforeObserve);
-
-  p.context.__agyPowertools.dispose();
-});
-
-test('refreshAccount handles out-of-order concurrency, failure retry without 60s lockout, missing buckets, vaultReason preservation, and loadDashboard(true) override', async () => {
+test('refreshAccount handles out-of-order concurrency, failure retry without 60s lockout, missing buckets, and loadDashboard(true) override', async () => {
   const p = page(true);
   let capturedEnv = null;
   const calls = [];
   const quotaCalls = [];
   let pendingFirstQuota = null;
   let quotaMode = 'stall-first';
-  let failSyncActive = false;
   let pendingDashboard = null;
   let stallFirstDashboard = true;
 
@@ -581,17 +446,7 @@ test('refreshAccount handles out-of-order concurrency, failure retry without 60s
   });
   p.context.__agyPanels = env => {
     capturedEnv = env;
-    return { Page: () => null, Sidebar: () => null, AccountSwitcher: () => null, dispose() {} };
-  };
-  const baseAccounts = {
-    activeId: 'acct-1',
-    vaultSupported: false,
-    vaultReason: 'Keyring unavailable in sandbox',
-    lastAutoSwitchAtMs: 0,
-    accounts: [
-      { id: 'acct-1', email: 'alice@example.com', name: 'Alice', hasCredential: true },
-      { id: 'acct-2', email: 'bob@example.com', name: 'Bob', hasCredential: true }
-    ]
+    return { Page: () => null, Sidebar: () => null, dispose() {} };
   };
   p.context.__agyPowertoolsHost = raw => {
     const req = JSON.parse(raw);
@@ -603,15 +458,7 @@ test('refreshAccount handles out-of-order concurrency, failure retry without 60s
     }
     queueMicrotask(() => {
       if (req.method === 'settings.get') {
-        p.context.__agyPowertoolsReceive(req.id, { enabled: true, multiAccount: true, language: 'zh-CN' });
-      } else if (req.method === 'accounts.list' || req.method === 'accounts.rename' || req.method === 'accounts.refreshLocalQuotas') {
-        p.context.__agyPowertoolsReceive(req.id, { ok: true, ...baseAccounts });
-      } else if (req.method === 'accounts.syncActive') {
-        if (failSyncActive) {
-          p.context.__agyPowertoolsReceive(req.id, { error: 'syncActive timeout' });
-        } else {
-          p.context.__agyPowertoolsReceive(req.id, { ...baseAccounts });
-        }
+        p.context.__agyPowertoolsReceive(req.id, { enabled: true });
       } else if (req.method === 'dashboard') {
         p.context.__agyPowertoolsReceive(req.id, { requests: [{ id: req.force ? 'fresh-dash' : 'normal-dash' }] });
       } else {
@@ -619,25 +466,21 @@ test('refreshAccount handles out-of-order concurrency, failure retry without 60s
       }
     });
   };
-  p.context.__agyInitialSettings = { enabled: true, multiAccount: true, language: 'zh-CN' };
+  p.context.__agyInitialSettings = { enabled: true };
   vm.runInContext(source, p.context);
   await new Promise(r => setTimeout(r, 20));
   assert.ok(capturedEnv);
   assert.ok(pendingFirstQuota, 'Initial passive refreshAccount should be in-flight');
 
-  // 1. Trigger forced refreshAccountQuotas('acct-1') while passive refresh is still pending
-  const refreshPromise = capturedEnv.refreshAccountQuotas('acct-1');
-  await refreshPromise;
-  // Fresh forced value (0.42) applied; groups sanitized (missing buckets survived, disabled filtered, untouched 100% description:'' stripped)
+  // 1. Trigger forced refreshAccount(true) while passive refresh is still pending
+  await capturedEnv.refreshAccount(true);
+  // Fresh forced value (0.42) applied; groups sanitized in quota.observe (missing buckets survived, disabled filtered, untouched 100% description:'' stripped)
   assert.equal(p.context.__agyPowertools.account.groups[1].buckets[0].remaining.value, 0.42);
-  const lastSync = calls.filter(c => c.method === 'accounts.syncActive').at(-1);
-  assert.equal(lastSync.snapshot.groups.length, 2);
-  assert.deepEqual(lastSync.snapshot.groups[0].buckets, []);
-  assert.equal(lastSync.snapshot.groups[1].buckets.length, 2);
-  assert.equal(lastSync.snapshot.groups[1].buckets[1].resetTimeMs, null);
-  // Active-target refresh MUST pass accountId: '' to accounts.refreshLocalQuotas so inactive windows update too
-  const lastLocal = calls.filter(c => c.method === 'accounts.refreshLocalQuotas').at(-1);
-  assert.equal(lastLocal.accountId, '');
+  const lastObs = calls.filter(c => c.method === 'quota.observe').at(-1);
+  assert.equal(lastObs.groups.length, 2);
+  assert.deepEqual(lastObs.groups[0].buckets, []);
+  assert.equal(lastObs.groups[1].buckets.length, 2);
+  assert.equal(lastObs.groups[1].buckets[1].resetTimeMs, null);
 
   // Now resolve the stale first passive request with 0.99 -> MUST NOT overwrite 0.42!
   pendingFirstQuota({
@@ -648,25 +491,13 @@ test('refreshAccount handles out-of-order concurrency, failure retry without 60s
   await new Promise(r => setTimeout(r, 20));
   assert.equal(p.context.__agyPowertools.account.groups[1].buckets[0].remaining.value, 0.42);
 
-  // 2. 'live-current' also resolves as active refresh and passes accountId: '' to refreshLocalQuotas
-  await capturedEnv.refreshAccountQuotas('live-current');
-  assert.equal(calls.filter(c => c.method === 'accounts.refreshLocalQuotas').at(-1).accountId, '');
-
-  // 3. vaultReason is preserved across renameAccount and refreshAccountQuotas
-  await capturedEnv.renameAccount('acct-1', 'Work');
-  assert.equal(p.context.__agyPowertools.accounts.vaultReason, 'Keyring unavailable in sandbox');
-
-  // 4. Failed retrieveUserQuotaSummary propagates error without locking out immediate retry, and syncActive error rejects refreshAccountQuotas
+  // 2. Failed retrieveUserQuotaSummary propagates error without locking out immediate retry
   quotaMode = 'fail-once';
-  await assert.rejects(() => capturedEnv.refreshAccountQuotas('acct-1'), /network blip/);
-  await capturedEnv.refreshAccountQuotas('acct-1');
+  await assert.rejects(() => capturedEnv.refreshAccount(true), /network blip/);
+  await capturedEnv.refreshAccount(true);
   assert.equal(p.context.__agyPowertools.account.groups[0].buckets[0].remaining.value, 0.66);
 
-  failSyncActive = true;
-  await assert.rejects(() => capturedEnv.refreshAccountQuotas('acct-1'), /syncActive timeout/);
-  failSyncActive = false;
-
-  // 5. loadDashboard(true) while loadDashboard(false) is in-flight MUST NOT be swallowed, and stale dashboard(false) MUST NOT overwrite dashboard(true)
+  // 3. loadDashboard(true) while loadDashboard(false) is in-flight MUST NOT be swallowed, and stale dashboard(false) MUST NOT overwrite dashboard(true)
   const passiveDash = capturedEnv.loadDashboard(false);
   const forcedDash = capturedEnv.loadDashboard(true);
   await forcedDash;
@@ -1484,288 +1315,6 @@ test('response toolbar Copy button overrides clipboard with only the final respo
   assert.equal(Object.prototype.hasOwnProperty.call(clipboard, 'writeText'), false);
 });
 
-
-test('auto-switch waits for background running tabs and interactive banner supports target override, pause/resume, and immediate switch', async () => {
-  let runningIds = ['bg-conv-1'];
-  const switchedCalls = [];
-  const intervals = [];
-  const makeEl = tag => {
-    const el = {
-      tagName: String(tag || 'div').toUpperCase(),
-      dataset: {},
-      style: {},
-      className: '',
-      textContent: '',
-      value: '',
-      children: [],
-      listeners: new Map(),
-      isConnected: true,
-      append(...items) { this.children.push(...items); },
-      appendChild(item) { this.children.push(item); return item; },
-      remove() { this.isConnected = false; },
-      setAttribute() {},
-      getAttribute() { return null; },
-      removeAttribute() {},
-      addEventListener(type, fn) { if (!this.listeners.has(type)) this.listeners.set(type, []); this.listeners.get(type).push(fn); },
-      querySelector: () => null,
-      querySelectorAll: () => []
-    };
-    return el;
-  };
-  const body = makeEl('body');
-  const doc = {
-    readyState: 'complete',
-    head: makeEl('head'),
-    body,
-    documentElement: { toggleAttribute() {}, removeAttribute() {}, setAttribute() {}, style: { setProperty() {}, removeProperty() {} } },
-    createElement: tag => makeEl(tag),
-    addEventListener() {},
-    querySelector: () => null,
-    querySelectorAll: () => []
-  };
-  const candA = { id: 'acct-b', email: 'b@example.com', alias: '备用号B' };
-  const candB = { id: 'acct-c', email: 'c@example.com', alias: '备用号C' };
-  const ctx = vm.createContext({
-    document: doc,
-    window: { addEventListener() {}, removeEventListener() {} },
-    location: { pathname: '/c/active-conv' },
-    AbortController,
-    React: { createElement: () => null, Fragment: 'fragment', useSyncExternalStore: (_, g) => g() },
-    ReactDOM: { createRoot: () => ({ render() {}, unmount() {} }) },
-    HC: () => null,
-    __agyInitialSettings: { enabled: true, multiAccount: true, autoSwitchAccount: true },
-    __agyNativeAdapter: {
-      wrap: el => el,
-      executionState: () => ({ conversationId: 'active-conv', status: 1 }),
-      runningConversationIds: () => runningIds,
-      capabilities: () => ({ email: 'a@example.com', model: 'Claude Opus 5.5', models: [{ modelId: 'Claude Opus 5.5' }] }),
-      service: () => ({
-        retrieveUserQuotaSummary: async () => ({
-          response: { groups: [{ displayName: 'Claude and GPT models', buckets: [{ bucketId: '3p-5h', remainingFraction: 0, resetTimeMs: Date.now() + 3600_000 }] }] }
-        })
-      }),
-      setEnabled() {}, setStageUpdates() {}, setEfficientIO() {}, setContextLimit() {}, setSidebarProjectLimit() {},
-      dispose() {}
-    },
-    __agyPowertoolsHost: raw => {
-      const msg = JSON.parse(raw);
-      if (msg.method === 'settings.get') ctx.__agyPowertoolsReceive(msg.id, { enabled: true, multiAccount: true, autoSwitchAccount: true });
-      else if (msg.method === 'accounts.list' || msg.method === 'accounts.syncActive') {
-        ctx.__agyPowertoolsReceive(msg.id, { activeId: 'acct-a', accounts: [{ id: 'acct-a', email: 'a@example.com' }, candA, candB] });
-      } else if (msg.method === 'accounts.autoSwitchCandidate') {
-        assert.equal(msg.activeModel, 'Claude Opus 5.5');
-        ctx.__agyPowertoolsReceive(msg.id, { candidate: candA, candidates: [candA, candB], cooldownRemainingMs: 0 });
-      } else if (msg.method === 'accounts.switch') {
-        switchedCalls.push(msg);
-        ctx.__agyPowertoolsReceive(msg.id, { ok: true, relaunching: true });
-      } else {
-        ctx.__agyPowertoolsReceive(msg.id, {});
-      }
-    },
-    MutationObserver: class { observe() {} disconnect() {} },
-    setInterval: (fn, ms) => { const item = { fn, ms, cleared: false }; intervals.push(item); return intervals.length; },
-    clearInterval: id => { if (intervals[id - 1]) intervals[id - 1].cleared = true; },
-    setTimeout: () => 1,
-    clearTimeout: () => {}
-  });
-  vm.runInContext(source, ctx);
-  await new Promise(r => setImmediate(r));
-  await new Promise(r => setImmediate(r));
-
-  // 1. Background tab 'bg-conv-1' is running -> banner must NOT appear yet
-  assert.equal(body.children.some(c => c.dataset?.testid === 'agy-autoswitch-banner'), false);
-
-  // 2. Once background tab finishes, next poll opens interactive banner with target dropdown & buttons
-  runningIds = [];
-  const mainPoll = intervals.find(i => i.ms === 2000 && !i.cleared);
-  assert.ok(mainPoll);
-  mainPoll.fn();
-  await new Promise(r => setImmediate(r));
-  await new Promise(r => setImmediate(r));
-  const banner = body.children.find(c => c.dataset?.testid === 'agy-autoswitch-banner' && c.isConnected);
-  assert.ok(banner, 'expected interactive autoswitch banner');
-
-  const walk = (node, pred) => {
-    if (!node) return null;
-    if (pred(node)) return node;
-    for (const c of node.children || []) { const hit = walk(c, pred); if (hit) return hit; }
-    return null;
-  };
-  const select = walk(banner, n => n.dataset?.testid === 'agy-autoswitch-target-select');
-  const menu = walk(banner, n => n.dataset?.testid === 'agy-autoswitch-target-menu');
-  const optC = walk(banner, n => n.dataset?.testid === 'agy-autoswitch-target-option-acct-c');
-  const pauseBtn = walk(banner, n => n.dataset?.testid === 'agy-autoswitch-pause');
-  const nowBtn = walk(banner, n => n.dataset?.testid === 'agy-autoswitch-now');
-  assert.ok(select && menu && optC && pauseBtn && nowBtn);
-  assert.equal(select.tagName, 'BUTTON', 'auto-switch banner must use custom Antigravity dropdown rather than native <select>');
-  assert.equal(walk(banner, n => n.tagName === 'SELECT'), null);
-
-  // Open custom picker, select candB (acct-c), and pause countdown
-  for (const fn of select.listeners.get('click') || []) fn({ stopPropagation() {} });
-  for (const fn of optC.listeners.get('click') || []) fn({ stopPropagation() {} });
-  for (const fn of pauseBtn.listeners.get('click') || []) fn();
-  const countdownTick = intervals.find(i => i.ms === 1000 && !i.cleared);
-  for (let i = 0; i < 10; i++) countdownTick.fn();
-  assert.equal(switchedCalls.length, 0, 'paused countdown must not switch');
-
-  // Click Switch Now while another background tab starts running -> defers while preserving depletedGroupKey ('claude')
-  runningIds = ['bg-conv-2'];
-  for (const fn of nowBtn.listeners.get('click') || []) fn();
-  await new Promise(r => setImmediate(r));
-  assert.equal(switchedCalls.length, 0);
-
-  // Once background tab finishes, deferred resume re-queries candidates with preserved group key and lets us switch
-  runningIds = [];
-  mainPoll.fn();
-  await new Promise(r => setImmediate(r));
-  await new Promise(r => setImmediate(r));
-  const banner2 = body.children.find(c => c.dataset?.testid === 'agy-autoswitch-banner' && c.isConnected);
-  assert.ok(banner2, 'deferred banner must reappear once background tasks finish');
-  const optC2 = walk(banner2, n => n.dataset?.testid === 'agy-autoswitch-target-option-acct-c');
-  const nowBtn2 = walk(banner2, n => n.dataset?.testid === 'agy-autoswitch-now');
-  for (const fn of optC2.listeners.get('click') || []) fn({ stopPropagation() {} });
-  for (const fn of nowBtn2.listeners.get('click') || []) fn();
-  await new Promise(r => setImmediate(r));
-  assert.equal(switchedCalls.length, 1);
-  assert.equal(switchedCalls[0].accountId, 'acct-c');
-
-  ctx.__agyPowertools.dispose();
-});
-
-test('native-ui auto-switch resets switchingInProgress when relaunching is false without manualRestartRequired and preserves depletedGroupKey on deferral', async () => {
-  const source = readFileSync(new URL('../lib/native-ui.js', import.meta.url), 'utf8');
-  const intervals = [];
-  const candidateGroupKeys = [];
-  const switchedCalls = [];
-  let runningIds = [];
-  let switchReply = { ok: true, unchanged: true, relaunching: false, manualRestartRequired: false };
-  const makeEl = tag => ({
-    tagName: String(tag || 'div').toUpperCase(),
-    dataset: {},
-    style: {},
-    className: '',
-    textContent: '',
-    children: [],
-    listeners: new Map(),
-    isConnected: true,
-    append(...items) { this.children.push(...items); },
-    appendChild(item) { this.children.push(item); return item; },
-    remove() { this.isConnected = false; },
-    contains() { return false; },
-    setAttribute() {},
-    getAttribute() { return null; },
-    removeAttribute() {},
-    addEventListener(type, fn) { if (!this.listeners.has(type)) this.listeners.set(type, []); this.listeners.get(type).push(fn); },
-    removeEventListener() {},
-    querySelector: () => null,
-    querySelectorAll: () => []
-  });
-  const body = makeEl('body');
-  const candA = { id: 'acct-b', email: 'b@example.com', alias: '备用号B' };
-  let capturedEnv = null;
-  const ctx = vm.createContext({
-    document: {
-      readyState: 'complete',
-      head: makeEl('head'),
-      body,
-      documentElement: { toggleAttribute() {}, removeAttribute() {}, setAttribute() {}, style: { setProperty() {}, removeProperty() {} } },
-      createElement: tag => makeEl(tag),
-      addEventListener() {},
-      removeEventListener() {},
-      querySelector: () => null,
-      querySelectorAll: () => []
-    },
-    window: { addEventListener() {}, removeEventListener() {} },
-    location: { pathname: '/c/active-conv' },
-    AbortController,
-    React: { createElement: () => null, Fragment: 'fragment', useSyncExternalStore: (_, g) => g() },
-    ReactDOM: { createRoot: () => ({ render() {}, unmount() {} }) },
-    HC: () => null,
-    __agyPanels: env => { capturedEnv = env; return { dispose() {} }; },
-    __agyInitialSettings: { enabled: true, multiAccount: true, autoSwitchAccount: true },
-    __agyNativeAdapter: {
-      wrap: el => el,
-      installPage: () => true,
-      executionState: () => ({ conversationId: 'active-conv', status: 1 }),
-      runningConversationIds: () => runningIds,
-      capabilities: () => ({ email: 'a@example.com', model: 'Claude Opus 5.5', models: [{ modelId: 'Claude Opus 5.5' }] }),
-      service: () => ({
-        retrieveUserQuotaSummary: async () => ({
-          response: { groups: [{ displayName: 'Claude and GPT models', buckets: [{ bucketId: '3p-5h', remainingFraction: 0, resetTimeMs: Date.now() + 3600_000 }] }] }
-        })
-      }),
-      setEnabled() {}, setStageUpdates() {}, setEfficientIO() {}, setContextLimit() {}, setSidebarProjectLimit() {},
-      dispose() {}
-    },
-    __agyPowertoolsHost: raw => {
-      const msg = JSON.parse(raw);
-      if (msg.method === 'settings.get') ctx.__agyPowertoolsReceive(msg.id, { enabled: true, multiAccount: true, autoSwitchAccount: true });
-      else if (msg.method === 'accounts.list' || msg.method === 'accounts.syncActive') {
-        ctx.__agyPowertoolsReceive(msg.id, { activeId: 'acct-a', accounts: [{ id: 'acct-a', email: 'a@example.com' }, candA] });
-      } else if (msg.method === 'accounts.autoSwitchCandidate') {
-        candidateGroupKeys.push(msg.depletedGroupKey);
-        ctx.__agyPowertoolsReceive(msg.id, { candidate: candA, candidates: [candA], cooldownRemainingMs: 0 });
-      } else if (msg.method === 'accounts.switch') {
-        switchedCalls.push(msg);
-        ctx.__agyPowertoolsReceive(msg.id, switchReply);
-      } else if (msg.method === 'accounts.refreshLocalQuotas') {
-        ctx.__agyPowertoolsReceive(msg.id, { ok: true, activeId: 'acct-a', accounts: [{ id: 'acct-a', email: 'a@example.com' }, candA] });
-      } else {
-        ctx.__agyPowertoolsReceive(msg.id, {});
-      }
-    },
-    MutationObserver: class { observe() {} disconnect() {} },
-    setInterval: (fn, ms) => { const item = { fn, ms, cleared: false }; intervals.push(item); return intervals.length; },
-    clearInterval: id => { if (intervals[id - 1]) intervals[id - 1].cleared = true; },
-    setTimeout: () => 1,
-    clearTimeout: () => {}
-  });
-  vm.runInContext(source, ctx);
-  await new Promise(r => setImmediate(r));
-  await new Promise(r => setImmediate(r));
-  assert.ok(capturedEnv);
-
-  const walk = (node, pred) => {
-    if (!node) return null;
-    if (pred(node)) return node;
-    for (const c of node.children || []) { const hit = walk(c, pred); if (hit) return hit; }
-    return null;
-  };
-  const banner1 = body.children.find(c => c.dataset?.testid === 'agy-autoswitch-banner' && c.isConnected);
-  assert.ok(banner1);
-  assert.equal(candidateGroupKeys.at(-1), 'claude');
-
-  // 1. Trigger Switch Now while runningIds becomes non-empty -> defers preserving 'claude'
-  runningIds = ['bg-1'];
-  const now1 = walk(banner1, n => n.dataset?.testid === 'agy-autoswitch-now');
-  for (const fn of now1.listeners.get('click') || []) fn();
-  await new Promise(r => setImmediate(r));
-  assert.equal(switchedCalls.length, 0);
-
-  // 2. Resume after background task ends -> must pass 'claude' (NOT '') to accounts.autoSwitchCandidate!
-  runningIds = [];
-  const mainPoll = intervals.find(i => i.ms === 2000 && !i.cleared);
-  mainPoll.fn();
-  await new Promise(r => setImmediate(r));
-  await new Promise(r => setImmediate(r));
-  assert.equal(candidateGroupKeys.at(-1), 'claude', 'deferred auto-switch must preserve depletedGroupKey');
-
-  // 3. Switch returns unchanged / relaunching: false without manualRestartRequired -> MUST NOT wedge switchingInProgress!
-  const banner2 = body.children.find(c => c.dataset?.testid === 'agy-autoswitch-banner' && c.isConnected);
-  assert.ok(banner2);
-  const now2 = walk(banner2, n => n.dataset?.testid === 'agy-autoswitch-now');
-  for (const fn of now2.listeners.get('click') || []) fn();
-  await new Promise(r => setImmediate(r));
-  await new Promise(r => setImmediate(r));
-  assert.equal(switchedCalls.length, 1);
-
-  // Prove switchingInProgress was cleanly reset: refreshAccountQuotas succeeds instead of skipping!
-  const postRefresh = await capturedEnv.refreshAccountQuotas();
-  assert.equal(postRefresh.ok, true);
-  assert.notEqual(postRefresh.skipped, true);
-  ctx.__agyPowertools.dispose();
-});
-
 test('long-conversation polling skips ring re-renders, completed response fiber walks, and unchanged refresh mounts (Issue #51)', async () => {
   const p = page(true);
   p.context.location.pathname = '/c/conv-long-51';
@@ -1906,23 +1455,20 @@ test('long-conversation polling skips ring re-renders, completed response fiber 
   p.context.__agyPowertools.dispose();
 });
 
-test('SSH remote window hides local AccountSwitcher, preserves native settings button, and skips accounts.syncActive (Issue #57)', async () => {
+test('SSH remote window detects sshRemote, preserves native settings button, and never calls multi-account RPCs', async () => {
   const p = page(true);
   p.context.sshRemote = { kind: 'ssh', host: 'devbox' };
   const calls = [];
-  let mountedSwitcher = 0;
+  let capturedEnv = null;
   const settingsParent = { children: [], insertBefore(n) { n.isConnected = true; this.children.push(n); } };
   const settingsBtn = { isConnected: true, parentElement: settingsParent, nextSibling: null };
   p.document.querySelector = sel => sel === '[data-testid="settings-button"]' ? settingsBtn : null;
   p.context.ReactDOM = {
-    createRoot(mount) {
-      return {
-        render() { if (mount.dataset?.agyPowertoolsRoot === 'account-switcher') mountedSwitcher++; },
-        unmount() {}
-      };
+    createRoot() {
+      return { render() {}, unmount() {} };
     }
   };
-  p.context.__agyPanels = () => ({ Page: () => null, Sidebar: () => null, AccountSwitcher: () => null, dispose() {} });
+  p.context.__agyPanels = env => { capturedEnv = env; return { Page: () => null, Sidebar: () => null, dispose() {} }; };
   p.context.__agyNativeAdapter.installPage = () => true;
   p.context.__agyNativeAdapter.capabilities = () => ({ email: 'remote@example.com', name: 'Remote User' });
   p.context.__agyNativeAdapter.service = () => ({
@@ -1932,18 +1478,18 @@ test('SSH remote window hides local AccountSwitcher, preserves native settings b
     const req = JSON.parse(raw);
     calls.push(req.method);
     queueMicrotask(() => {
-      if (req.method === 'settings.get') p.context.__agyPowertoolsReceive(req.id, { enabled: true, multiAccount: true, accountSwitcher: true });
+      if (req.method === 'settings.get') p.context.__agyPowertoolsReceive(req.id, { enabled: true });
       else p.context.__agyPowertoolsReceive(req.id, { ok: true, estimates: [] });
     });
   };
-  p.context.__agyInitialSettings = { enabled: true, multiAccount: true, accountSwitcher: true };
+  p.context.__agyInitialSettings = { enabled: true };
   vm.runInContext(source, p.context);
   await new Promise(r => setTimeout(r, 25));
 
+  assert.equal(capturedEnv.isRemoteSshWindow(), true);
   assert.equal(p.document.documentElement.hasAttribute('data-agy-account-switcher'), false);
-  assert.equal(mountedSwitcher, 0);
-  assert.equal(calls.includes('accounts.syncActive'), false);
-  assert.equal(calls.includes('accounts.list'), false);
+  assert.equal(settingsParent.children.length, 0);
+  assert.equal(calls.some(m => m.startsWith('accounts.')), false);
   p.context.__agyPowertools.dispose();
 });
 
@@ -2469,14 +2015,14 @@ test('state polling passes knownRev and short-circuits unchanged replies, conver
   const stateReqs = [];
   const resetReqs = [];
   let revA = 11;
-  let serverSettings = { enabled: true, keepTurnOutline: true, language: 'zh-CN' };
+  let serverSettings = { enabled: true, keepTurnOutline: true, overviewRange: 'weeklyQuota' };
   p.context.__agyPowertoolsHost = raw => {
     const req = JSON.parse(raw);
     queueMicrotask(() => {
       if (req.method === 'settings.get') p.context.__agyPowertoolsReceive(req.id, serverSettings);
       else if (req.method === 'settings.reset') {
         resetReqs.push(req);
-        serverSettings = { enabled: true, keepTurnOutline: true, language: 'en' };
+        serverSettings = { enabled: true, keepTurnOutline: true, overviewRange: '24h' };
         p.context.__agyPowertoolsReceive(req.id, serverSettings);
       }
       else if (req.method === 'state') {
@@ -2499,8 +2045,8 @@ test('state polling passes knownRev and short-circuits unchanged replies, conver
       }
     });
   };
-  p.context.__agyDefaultSettings = { language: 'en' };
-  p.context.__agyInitialSettings = { enabled: true, keepTurnOutline: true, language: 'zh-CN' };
+  p.context.__agyDefaultSettings = { overviewRange: '24h' };
+  p.context.__agyInitialSettings = { enabled: true, keepTurnOutline: true, overviewRange: 'weeklyQuota' };
   vm.runInContext(source, p.context);
   await new Promise(r => setImmediate(r));
   await new Promise(r => setImmediate(r));
@@ -2526,11 +2072,11 @@ test('state polling passes knownRev and short-circuits unchanged replies, conver
   await new Promise(r => setImmediate(r));
   assert.equal(stateReqs.at(-1).knownRev, 12, 'settings-only state reply must still advance state.stateRev');
 
-  // 1c. Restore defaults calls backend settings.reset and keeps backend OS default language ('en') instead of hardcoded 'zh-CN'
-  assert.equal(capturedEnv.defaults.language, 'en');
+  // 1c. Restore defaults calls backend settings.reset and applies backend default settings
+  assert.equal(capturedEnv.defaults.overviewRange, '24h');
   await capturedEnv.resetSettings();
   assert.equal(resetReqs.length, 1);
-  assert.equal(capturedEnv.options().language, 'en');
+  assert.equal(capturedEnv.options().overviewRange, '24h');
 
   // 2. Issue #70: when conv-a enters running state while an unsubmitted pendingEdit is open,
   // cancelEdit restores composer home AND preserves pre-edit draft/attachments (restoreDraft: true)
@@ -2567,7 +2113,147 @@ test('composer popover buttons retain accessible names without hover tips', () =
     const index = source.indexOf(`'data-testid': '${id}'`);
     assert.notEqual(index, -1);
     const props = source.slice(source.lastIndexOf('h(Uy, {', index), source.indexOf('}, h(', index));
-    assert.match(props, /'aria-label': t\('[^']+'\)/);
+    assert.match(props, /'aria-label': (?:'[^']+'|t\('[^']+'\))/);
     assert.doesNotMatch(props, /data-pt-tip/);
+  }
+});
+
+test('Settings panel renders ONLY closed-loop retained options without language selector or multi-account section', () => {
+  const panelsSource = readFileSync(new URL('../lib/native-panels.js', import.meta.url), 'utf8');
+  const R = {
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    Fragment: 'fragment',
+    useState: init => [typeof init === 'function' ? init() : init, () => {}],
+    useEffect() {},
+    useRef: v => ({ current: v }),
+    useSyncExternalStore: (_, getSnap) => getSnap()
+  };
+  const ctx = vm.createContext({
+    React: R,
+    URL,
+    document: { createElement: () => ({ dataset: {}, remove() {} }), head: { append() {} } },
+    UP: ({ children, rightElement, ...p }) => R.createElement('div', p, children, rightElement),
+    TP: ({ children, ...p }) => R.createElement('div', p, children),
+    VP: ({ children, ...p }) => R.createElement('section', p, children),
+    XP: p => R.createElement('button', p),
+    Uy: ({ children, ...p }) => R.createElement('button', p, children),
+    kT: ({ children, ...p }) => R.createElement('div', p, children),
+    lT: ({ children, ...p }) => R.createElement('button', p, children),
+    mT: ({ children, ...p }) => R.createElement('div', p, children),
+    nT: ({ children, ...p }) => R.createElement('div', p, children),
+    k0: ({ children, ...p }) => R.createElement('div', p, children),
+    dq: p => R.createElement('span', p)
+  });
+  vm.runInContext(panelsSource, ctx);
+  const panels = ctx.__agyPanels({
+    version: '2.16.8',
+    project: { name: 'Agy Powertools' },
+    t: v => v,
+    defaults: {},
+    options: () => ({
+      enabled: true,
+      compact: true,
+      userBubbleTint: false,
+      keepTurnOutline: true,
+      keepOverviewOpen: true,
+      taskbarBadge: true,
+      autoRelaunch: true,
+      overviewRange: 'weeklyQuota',
+      pricingMode: 'standard',
+      contextRing: true,
+      speedStats: true,
+      progress: true,
+      overviewQuota: false,
+      composerQuotaHalo: true,
+      composerQuotaHaloWindow: 'auto',
+      subagentTelemetry: true,
+      timing: true,
+      toolDetails: true,
+      turnMeta: false,
+      stageUpdates: true,
+      responseBranch: true,
+      messageEdit: true,
+      fileContextMenu: true,
+      sshCommandPaste: true,
+      autoCheckUpdates: true,
+      autoInstallUpdates: false
+    }),
+    settingsError: () => '',
+    isRemoteSshWindow: () => false,
+    change: async () => {},
+    request: async () => ({ status: 'idle' }),
+    subscribe: () => () => {},
+    revision: () => 0
+  });
+  const expand = node => {
+    if (node == null || typeof node !== 'object') return node;
+    if (Array.isArray(node)) return node.map(expand);
+    if (typeof node.type === 'function') return expand(node.type({ ...(node.props || {}), children: node.children }));
+    const nextProps = node.props ? { ...node.props } : {};
+    if (nextProps.rightElement) nextProps.rightElement = expand(nextProps.rightElement);
+    const children = (Array.isArray(node.children) ? node.children : [node.children]).map(expand);
+    return { ...node, props: nextProps, children };
+  };
+  const tree = expand(panels.Settings());
+  const testIds = new Set();
+  const texts = [];
+  const walk = node => {
+    if (node == null || typeof node === 'boolean') return;
+    if (typeof node === 'string' || typeof node === 'number') { texts.push(String(node)); return; }
+    if (Array.isArray(node)) { for (const c of node) walk(c); return; }
+    if (typeof node === 'object') {
+      if (node.props?.['data-testid']) testIds.add(node.props['data-testid']);
+      if (typeof node.props?.label === 'string') texts.push(node.props.label);
+      for (const c of node.children || []) walk(c);
+    }
+  };
+  walk(tree);
+  const fullText = texts.join(' ');
+
+  // Removed options & sections MUST NOT exist anywhere in Settings
+  for (const forbidden of [
+    'agy-setting-row-language',
+    'agy-language-select',
+    'agy-setting-row-multiAccount',
+    'agy-setting-row-accountSwitcher',
+    'agy-setting-row-autoSwitchAccount',
+    'agy-account-view-mode',
+    'agy-account-quota-window'
+  ]) {
+    assert.equal(testIds.has(forbidden), false, `Forbidden testid ${forbidden} still present in Settings`);
+  }
+  assert.equal(fullText.includes('账号与切换'), false);
+  assert.equal(fullText.includes('启用多账号切换'), false);
+
+  // Retained closed-loop options MUST all exist in Settings
+  for (const expected of [
+    'agy-setting-row-enabled',
+    'agy-setting-row-compact',
+    'agy-setting-row-userBubbleTint',
+    'agy-setting-row-keepTurnOutline',
+    'agy-setting-row-keepOverviewOpen',
+    'agy-setting-row-taskbarBadge',
+    'agy-setting-row-autoRelaunch',
+    'agy-setting-row-overviewRange',
+    'agy-setting-row-pricingMode',
+    'agy-setting-row-contextRing',
+    'agy-setting-row-speedStats',
+    'agy-setting-row-progress',
+    'agy-setting-row-overviewQuota',
+    'agy-setting-row-composerQuotaHalo',
+    'agy-setting-row-composerQuotaHaloWindow',
+    'agy-setting-row-subagentTelemetry',
+    'agy-setting-row-timing',
+    'agy-setting-row-toolDetails',
+    'agy-setting-row-turnMeta',
+    'agy-setting-row-stageUpdates',
+    'agy-setting-row-responseBranch',
+    'agy-setting-row-messageEdit',
+    'agy-setting-row-fileContextMenu',
+    'agy-setting-row-sshCommandPaste',
+    'agy-setting-row-autoCheckUpdates',
+    'agy-setting-row-autoInstallUpdates'
+  ]) {
+    assert.equal(testIds.has(expected), true, `Expected retained testid ${expected} missing from Settings`);
   }
 });

@@ -47,12 +47,12 @@ test('About morphs the single action button through check, install, progress, ro
   installBtn.props.onClick();await tick();tree=ui.render();
   assert.equal(ui.find(tree,'agy-install-update').props.disabled,true);
   assert.deepEqual(ui.calls.find(call=>call.method==='update.install').payload.version,'2.13.0');
-  assert.ok(ui.collectText(ui.find(tree,'agy-install-status')).includes('Preparing update…'));
+  assert.ok(ui.collectText(ui.find(tree,'agy-install-status')).includes('正在准备更新…'));
   ui.setStatus({status:'rolled-back'});ui.effects[0]();await tick();tree=ui.render();
-  assert.ok(ui.collectText(ui.find(tree,'agy-install-status')).includes('Update failed. Previous version restored.'));
+  assert.ok(ui.collectText(ui.find(tree,'agy-install-status')).includes('更新失败，已恢复旧版本'));
   assert.equal(ui.find(tree,'agy-install-update').props.disabled,false);
   ui.setStatus({status:'completed'});ui.effects[0]();await tick();tree=ui.render();
-  assert.ok(ui.collectText(ui.find(tree,'agy-install-status')).includes('Update installed'));
+  assert.ok(ui.collectText(ui.find(tree,'agy-install-status')).includes('更新完成'));
   assert.equal(ui.find(tree,'agy-install-update').props.disabled,true);
 });
 

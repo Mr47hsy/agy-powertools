@@ -40,7 +40,7 @@
 - **Adaptive routing & multi-tier DOM anchors**: Dynamically discovers TanStack Router parent layouts and falls back to a full-pane Standalone Overlay (`Powertools`) if client routing changes incompatibly. Sidebar navigation, composer context rings, inline message edit buttons, reply toolbars, and conversation menus all feature multi-tier DOM fallback selectors.
 - **Cross-platform cold-start auto-recovery**: Client updates often overwrite desktop/Start-menu shortcuts and strip `--remote-debugging-port=0`. On Windows, macOS, Linux, and WSL2 local desktops, the sidecar automatically heals shortcuts and relaunches once with debugging enabled (protected by session deduplication, a 120s cooldown, a 2-attempt circuit breaker, and a fresh-install grace period).
 - **Fault-isolated telemetry readers**: The wire-level Protobuf reader skips unknown fields, wire-type 3/4 groups, and truncated trailing bytes; SQLite queries isolate `gen_metadata` and `steps` independently and fall back cleanly to JSONL transcripts.
-- **Non-invasive localization**: Translates only Powertools' own UI (`简体中文` / `繁體中文` / `English`) without walking or mutating Antigravity's native DOM text.
+- **Non-invasive boundary**: Powertools' own UI uses Simplified Chinese directly without walking or mutating Antigravity's native DOM text or touching OS keyring credentials.
 
 ---
 
@@ -51,7 +51,7 @@
 3. **Compact layout and live stage updates**: Preserves client font size while tightening body line height (`1.4`) and block spacing; communicates brief progress updates during consecutive tool calls and folds them into the top duration bar on completion.
 4. **Session branching and inline editing**: Branch a new session from any historical reply or sidebar session menu with full history preserved (including sessions with subagents), or edit and resend messages directly in place.
 5. **File context menu and practical utilities**: Right-click file links in messages or entries in the right file tree to attach to chat, open / open with, reveal in folder, copy file, or copy path (including LAN NAS / SMB paths on Windows); adds collapsible Overview Task Progress & Quota sections, window title unread counts, optional composer quota halo border, and user message bubble tint.
-6. **SSH remote and WSL2 support**: Reads remote session, subagent, and usage metrics directly in desktop `SSH` windows over OpenSSH without installing plugins on the server; automatically bridges cross-OS CDP (NAT & Mirrored), multi-account credentials, and relaunch when Windows Antigravity runs in built-in WSL2 mode.
+6. **SSH remote and WSL2 support**: Reads remote session, subagent, and usage metrics directly in desktop `SSH` windows over OpenSSH without installing plugins on the server; automatically bridges cross-OS CDP (NAT & Mirrored) and cold-start relaunch when Windows Antigravity runs in built-in WSL2 mode.
 
 ---
 
@@ -103,7 +103,6 @@ Every setting applies live in **Powertools -> Settings** and saves automatically
 | Setting | Default | Description |
 | --- | --- | --- |
 | Enable Powertools | On | Master switch; pauses all UI enhancements while keeping saved settings |
-| Language | `简体中文` | Controls Powertools' own UI language (`简体中文`, `繁體中文`, or `English`) without mutating native client UI text |
 | Compact layout | On | Tightens line height (`1.4`), block spacing, and tool rows while keeping client font size |
 | Tint user message bubbles | Off | Adds a tint and border to user messages (Accent, 5 presets, custom color, and 10%-100% blend slider) |
 | Always show conversation outline | On | Keeps the turn navigation rail visible in multi-turn chats |
@@ -127,14 +126,13 @@ Every setting applies live in **Powertools -> Settings** and saves automatically
 | Turn duration / Expand tools | On | Shows total duration on finished turns and expands tool details on click |
 | Turn footer telemetry | Off | Displays per-turn model, cache hit rate, input/output tokens and estimated cost in finished reply footers |
 
-### Session enhancements, context menus & multi-account
+### Session enhancements & context menus
 
 | Setting | Default | Description |
 | --- | --- | --- |
 | Stage updates | On | Reports brief progress updates during tool runs and folds them on completion |
 | Branching / Message edit / File menu | On | Native session branching, inline message editing, and local/NAS/Files tree context menu (with dynamic Open With apps and `#L:C` jump) |
 | Recognize pasted SSH commands | On | Extracts `user@host:port` when pasting `ssh -p PORT user@host` into Create New Project -> SSH Host (discards appended passwords) |
-| Enable multi-account switching | Off | Opt-in with risk notice; supports desktop & WSL2 credential isolation, sidebar switcher, 5H/weekly toggle, and auto-switch |
 
 ### Environment variables & paths
 
@@ -144,13 +142,19 @@ Every setting applies live in **Powertools -> Settings** and saves automatically
 | `ANTIGRAVITY_CLI_DATA_DIR` | Custom `agy` CLI data directory (defaults to `~/.gemini/antigravity-cli`) |
 | `ANTIGRAVITY_CDP_PORT_FILE` | Explicit path to `DevToolsActivePort` (also honors `AGY_BROWSER_ACTIVE_PORT_FILE`) |
 | `~/.gemini/config/plugins/agy-powertools/` | Installed plugin files and runtime scripts |
-| `~/.gemini/antigravity/plugin_data/agy-powertools/` | Saved settings, account metadata, quota samples, and pricing cache |
+| `~/.gemini/antigravity/plugin_data/agy-powertools/` | Saved settings, quota samples, and pricing cache |
 
 </details>
 
 ---
 
 ## Changelog
+
+### v2.16.8
+- **Closed-loop feature boundary cleanup**: Removed the multi-language selector and translation modules (fixing Powertools' UI to Simplified Chinese), and removed multi-account switching and OS keyring credential management (keeping single active account 5-hour / weekly quota display and estimation).
+
+### v2.16.7
+- **Fix Antigravity 2.35.2 component matching and popover positioning regressions**: Accepted React `forwardRef` / `memo` component objects, added two-pass exact-first binding discovery, refactored fallback Popover / Select synchronous trigger positioning, and replaced font-ligature fallback icons with pure inline SVGs.
 
 ### v2.16.6
 - **Fix unclickable sidebar conversation rows when running beam is enabled**: Removed the child `position: relative` override that collapsed Antigravity's `position: absolute; inset: 0` row link, restoring full row and hover-button clickability.

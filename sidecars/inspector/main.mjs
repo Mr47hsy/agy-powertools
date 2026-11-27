@@ -5,7 +5,7 @@ import { getAppDataDir, listRecentConversations, resolveConversationId, parseSes
 import { startNativeIntegration } from '../../lib/native-host.mjs';
 import { serveRuntime } from '../../lib/runtime-control.mjs';
 import { installationPaths } from '../../lib/lifecycle.mjs';
-import { createSettingsStore, DEFAULT_SETTINGS } from '../../lib/settings.mjs';
+import { createSettingsStore } from '../../lib/settings.mjs';
 import { configureLaunchers, createColdStartRelaunchCoordinator, isRemoteSshEnvironment, manualLaunchCommand, maybePromptPostUpdateRelaunch, recordDebugPortReady, scheduleRelaunchWithDebugPort } from '../../lib/launcher.mjs';
 import { startSidecarWebUi } from '../../lib/sidecar-ui.mjs';
 import { checkForUpdates } from '../../lib/updates.mjs';
@@ -62,7 +62,6 @@ if (isDirectRun) {
           maybePromptPostUpdateRelaunch({
             dataDir: paths.data,
             installDir: paths.installed,
-            language: current.language || DEFAULT_SETTINGS.language,
             home: paths.home
           });
         }
@@ -82,7 +81,6 @@ if (isDirectRun) {
         clientVersion: health.clientVersion || '',
         connected: Boolean(health.connected),
         enabled: current.enabled !== false,
-        language: current.language || DEFAULT_SETTINGS.language,
         platform: process.platform,
         autoRelaunch,
         macAutoRelaunch: autoRelaunch,

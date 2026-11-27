@@ -3,13 +3,17 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createSettingsStore, DEFAULT_SETTINGS, detectSystemLanguage } from '../lib/settings.mjs';
+import { createSettingsStore, DEFAULT_SETTINGS } from '../lib/settings.mjs';
 
-test('settings persist, merge safely, sync autoRelaunch <-> macAutoRelaunch, ignore legacy disk keys on read, and reject invalid patches', () => {
+test('settings persist, merge safely, sync autoRelaunch <-> macAutoRelaunch, ignore legacy disk keys on read, and reject removed or invalid keys', () => {
   const directory = mkdtempSync(join(tmpdir(), 'agy-settings-'));
   try {
     const store = createSettingsStore(directory);
     assert.deepEqual(store.get(), DEFAULT_SETTINGS);
+    assert.equal('language' in DEFAULT_SETTINGS, false);
+    assert.equal('multiAccount' in DEFAULT_SETTINGS, false);
+    assert.equal('accountSwitcher' in DEFAULT_SETTINGS, false);
+    assert.equal('autoSwitchAccount' in DEFAULT_SETTINGS, false);
 
     store.set({ compact: false, timing: false });
     assert.equal(createSettingsStore(directory).get().compact, false);
@@ -62,19 +66,6 @@ test('settings persist, merge safely, sync autoRelaunch <-> macAutoRelaunch, ign
     store.set({ turnMeta: true }); assert.equal(store.get().turnMeta, true);
     store.set({ turnMeta: false }); assert.equal(store.get().turnMeta, false);
 
-    assert.equal(store.get().multiAccount, false);
-    assert.equal(store.get().accountSwitcher, true);
-    assert.equal(store.get().accountViewMode, 'list');
-    assert.equal(store.get().accountQuotaWindow, '5h');
-    assert.equal(store.get().autoSwitchAccount, false);
-    store.set({ multiAccount: true, accountSwitcher: false, accountViewMode: 'card', accountQuotaWindow: 'weekly', autoSwitchAccount: true });
-    assert.equal(store.get().multiAccount, true);
-    assert.equal(store.get().accountSwitcher, false);
-    assert.equal(store.get().accountViewMode, 'card');
-    assert.equal(store.get().accountQuotaWindow, 'weekly');
-    assert.equal(store.get().autoSwitchAccount, true);
-    store.set({ multiAccount: false, accountSwitcher: true, accountViewMode: 'list', accountQuotaWindow: '5h', autoSwitchAccount: false });
-
     assert.equal(DEFAULT_SETTINGS.overviewRange, 'weeklyQuota');
     store.set({ overviewRange: '24h' }); assert.equal(store.get().overviewRange, '24h');
     store.set({ overviewRange: 'today' }); assert.equal(store.get().overviewRange, 'today');
@@ -84,9 +75,8 @@ test('settings persist, merge safely, sync autoRelaunch <-> macAutoRelaunch, ign
     store.set({ pricingMode: 'promo' }); assert.equal(store.get().pricingMode, 'promo');
     store.set({ pricingMode: 'standard' }); assert.equal(store.get().pricingMode, 'standard');
 
-    store.set({ enabled: false, language: 'en' });
+    store.set({ enabled: false });
     assert.equal(store.get().enabled, false);
-    assert.equal(store.get().language, 'en');
 
     const before = readFileSync(join(directory, 'settings.json'), 'utf8');
     for (const value of [
@@ -103,13 +93,17 @@ test('settings persist, merge safely, sync autoRelaunch <-> macAutoRelaunch, ign
       { autoRelaunch: 'yes' },
       { unknown: true },
       { toString: false },
-      { language: 'invalid' },
+      { language: 'en' },
+      { language: 'zh-CN' },
+      { multiAccount: true },
+      { accountSwitcher: false },
+      { accountViewMode: 'card' },
+      { accountQuotaWindow: 'weekly' },
+      { autoSwitchAccount: true },
       { overviewRange: 'custom' },
       { overviewRange: 'invalid' },
       { pricingMode: 'batch' },
       { pricingMode: true },
-      { accountViewMode: 'grid' },
-      { accountQuotaWindow: '1h' },
       []
     ]) {
       assert.throws(() => store.set(value), /设置/);
@@ -120,6 +114,9 @@ test('settings persist, merge safely, sync autoRelaunch <-> macAutoRelaunch, ign
     writeFileSync(join(directory, 'settings.json'), JSON.stringify({
       compact: false,
       macAutoRelaunch: false,
+      language: 'en',
+      multiAccount: true,
+      accountSwitcher: true,
       customFont: 'Maple Mono',
       proxyEnabled: true,
       contextLimit: 1000000
@@ -128,31 +125,18 @@ test('settings persist, merge safely, sync autoRelaunch <-> macAutoRelaunch, ign
     assert.equal(legacyLoaded.compact, false);
     assert.equal(legacyLoaded.autoRelaunch, false);
     assert.equal(legacyLoaded.macAutoRelaunch, false);
+    assert.equal('language' in legacyLoaded, false);
+    assert.equal('multiAccount' in legacyLoaded, false);
+    assert.equal('accountSwitcher' in legacyLoaded, false);
     assert.equal('customFont' in legacyLoaded, false);
     assert.equal('proxyEnabled' in legacyLoaded, false);
 
     store.set(DEFAULT_SETTINGS);
     assert.deepEqual(store.get(), DEFAULT_SETTINGS);
-    store.set({ compact: false, language: DEFAULT_SETTINGS.language === 'en' ? 'zh-CN' : 'en' });
+    store.set({ compact: false, pricingMode: 'promo' });
     assert.deepEqual(store.reset(), DEFAULT_SETTINGS);
     assert.deepEqual(store.get(), DEFAULT_SETTINGS);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-});
-
-test('detectSystemLanguage selects zh-CN, zh-TW, or en across BCP-47 and POSIX underscore locales (Issue #69)', () => {
-  assert.equal(detectSystemLanguage({ locale: 'zh-CN', env: {} }), 'zh-CN');
-  assert.equal(detectSystemLanguage({ locale: 'zh-Hans-SG', env: {} }), 'zh-CN');
-  assert.equal(detectSystemLanguage({ locale: 'zh-TW', env: {} }), 'zh-TW');
-  assert.equal(detectSystemLanguage({ locale: 'zh-Hant-HK', env: {} }), 'zh-TW');
-  assert.equal(detectSystemLanguage({ locale: 'en-US', env: {} }), 'en');
-  assert.equal(detectSystemLanguage({ locale: 'tr-TR', env: {} }), 'en');
-  assert.equal(detectSystemLanguage({ locale: '', env: { LANG: 'en_GB.UTF-8' } }), 'en');
-  assert.equal(detectSystemLanguage({ locale: '', env: { LC_ALL: 'zh_TW.UTF-8' } }), 'zh-TW');
-  assert.equal(detectSystemLanguage({ locale: '', env: { LANG: 'zh_CN.UTF-8' } }), 'zh-CN');
-  assert.equal(detectSystemLanguage({ locale: '', env: { LANG: 'zh_SG.UTF-8' } }), 'zh-CN');
-  assert.equal(detectSystemLanguage({ locale: '', env: { LC_ALL: 'zh_HK.UTF-8' } }), 'zh-TW');
-  assert.equal(detectSystemLanguage({ locale: '', env: { LC_ALL: 'zh_MO.UTF-8' } }), 'zh-TW');
-  assert.equal(detectSystemLanguage({ locale: 'C.UTF-8', env: { LANG: 'zh_CN.UTF-8' } }), 'zh-CN');
 });

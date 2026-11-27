@@ -766,17 +766,6 @@ test('inline edit capture-phase Enter and Send click revert and resend directly 
   vm.runInContext(readFileSync(new URL('../lib/native-client.js', import.meta.url), 'utf8'), context);
   const adapter = context.__agyNativeAdapter;
 
-  // Verify Issue #56 authService login session helpers
-  assert.deepEqual({ ...adapter.loginSession() }, loginSnap);
-  const seenSnaps = [];
-  const disposeSub = adapter.onLoginSessionChange(s => seenSnaps.push(s));
-  loginSubs[0]({ active: true, authUrl: 'https://accounts.google.com/o/oauth2/v2/auth?state=2', mode: 'redirect' });
-  assert.equal(seenSnaps.length, 1);
-  assert.equal(seenSnaps[0].authUrl, 'https://accounts.google.com/o/oauth2/v2/auth?state=2');
-  disposeSub();
-  adapter.cancelAccountLogin();
-  assert.equal(cancelledLogin, 1);
-
   // Verify Issue #58: capture-phase Enter submits via revertToIndex + chatCtx.sendMessage and restores composer home
   await adapter.beginEdit(element);
   assert.ok(adapter.pendingEdit);

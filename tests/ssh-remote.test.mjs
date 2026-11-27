@@ -618,10 +618,9 @@ test('local state cache invalidates on task.md edits, execution.live/subagent ti
     assert.equal(r9.unchanged, undefined);
     assert.equal(r9.progress.phaseDetail, 'Debugger B');
 
-    // 6. settings.reset restores backend DEFAULT_SETTINGS (including OS-detected language)
-    const flippedLang = DEFAULT_SETTINGS.language === 'en' ? 'zh-CN' : 'en';
-    const setRes = await rpc(10, { method: 'settings.set', settings: { language: flippedLang, compact: false } });
-    assert.equal(setRes.language, flippedLang);
+    // 6. settings.reset restores backend DEFAULT_SETTINGS
+    const setRes = await rpc(10, { method: 'settings.set', settings: { pricingMode: 'promo', compact: false } });
+    assert.equal(setRes.pricingMode, 'promo');
     assert.equal(setRes.compact, false);
     const resetRes = await rpc(11, { method: 'settings.reset' });
     assert.deepEqual(resetRes, DEFAULT_SETTINGS);

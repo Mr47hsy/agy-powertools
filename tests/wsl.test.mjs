@@ -15,8 +15,6 @@ import {
   wslPathToWindows
 } from '../lib/wsl.mjs';
 import { devToolsPortFile } from '../lib/paths.mjs';
-import { createCredentialVault, vaultTargetFor } from '../lib/credential-vault.mjs';
-import { createAccountsStore } from '../lib/accounts.mjs';
 import {
   configureLaunchers,
   isRemoteSshEnvironment,
@@ -38,8 +36,8 @@ test('WSL2 environment detection, WSLENV merging, path conversion, and CDP URL r
   assert.equal(wslDistroName({ env: { WSL_DISTRO_NAME: 'Ubuntu-24.04' } }), 'Ubuntu-24.04');
   assert.equal(wslDistroName({ env: { WSL_DISTRO_NAME: 'My Distro:1' } }), 'My_Distro_1');
 
-  const merged = appendWslEnv({ WSLENV: 'EXISTING/u:AGY_CRED_OP' }, ['AGY_CRED_OP', 'AGY_CRED_SRC', 'AGY_CRED_DST']);
-  assert.equal(merged.WSLENV, 'EXISTING/u:AGY_CRED_OP:AGY_CRED_SRC:AGY_CRED_DST');
+  const merged = appendWslEnv({ WSLENV: 'EXISTING/u:AGY_LNK_LIST' }, ['AGY_LNK_LIST', 'AGY_RELAUNCH_SCRIPT']);
+  assert.equal(merged.WSLENV, 'EXISTING/u:AGY_LNK_LIST:AGY_RELAUNCH_SCRIPT');
 
   assert.equal(
     windowsPathToWsl('C:\\Users\\Alice\\AppData\\Roaming', { runSpawn: () => ({ status: 1, stdout: '' }) }),
@@ -128,145 +126,6 @@ test('createWslCdpBridge multiplexes HTTP and concurrent TCP streams over stdio 
     await bridge.close();
     await new Promise(resolve => httpServer.close(resolve));
     await new Promise(resolve => echoServer.close(resolve));
-  }
-});
-
-test('WSL2 hybrid credential vault pairs file active state with isolated Windows Credential Manager backup slots', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'agy-wsl-vault-'));
-  try {
-    const geminiDir = join(dir, '.gemini');
-    const configDir = join(dir, '.config', 'antigravity');
-    mkdirSync(geminiDir, { recursive: true });
-    mkdirSync(configDir, { recursive: true });
-    const tokenPath = join(geminiDir, 'jetski-standalone-oauth-token');
-    const scopePath = join(configDir, 'credential-user-scope');
-    writeFileSync(tokenPath, 'oauth-token-alpha\n', 'utf8');
-    writeFileSync(scopePath, 'scope-alpha', 'utf8');
-
-    const winStore = new Map();
-    const spawnCalls = [];
-    const vault = createCredentialVault({
-      platform: 'linux',
-      home: dir,
-      env: { WSL_DISTRO_NAME: 'Ubuntu-24.04' },
-      wsl: true,
-      runSpawn(cmd, args, opts) {
-        spawnCalls.push({ cmd, args, env: opts.env, input: opts.input, stdio: opts.stdio });
-        const op = opts.env.AGY_CRED_OP;
-        if (op === 'probe') return { status: 0, stdout: '{"ok":true}\n', stderr: '' };
-        if (op === 'write') {
-          winStore.set(opts.env.AGY_CRED_DST, opts.input);
-          return { status: 0, stdout: JSON.stringify({ ok: true, bytes: Buffer.from(opts.input, 'base64').length, hash: '112233445566' }) + '\n', stderr: '' };
-        }
-        if (op === 'has' || op === 'inspect') {
-          const val = winStore.get(opts.env.AGY_CRED_SRC);
-          return { status: 0, stdout: JSON.stringify({ ok: true, exists: Boolean(val), hash: val ? '112233445566' : '' }) + '\n', stderr: '' };
-        }
-        if (op === 'read') {
-          const val = winStore.get(opts.env.AGY_CRED_SRC);
-          return { status: 0, stdout: JSON.stringify({ ok: true, exists: Boolean(val), bytes: val ? Buffer.from(val, 'base64').length : 0, hash: '112233445566', data: val || '' }) + '\n', stderr: '' };
-        }
-        if (op === 'remove') {
-          winStore.delete(opts.env.AGY_CRED_SRC);
-          return { status: 0, stdout: '{"ok":true}\n', stderr: '' };
-        }
-        return { status: 1, stdout: '', stderr: 'unexpected' };
-      }
-    });
-
-    assert.equal(vaultTargetFor('acct-1', { wslDistro: 'Ubuntu-24.04' }), 'agy-powertools:wsl:Ubuntu-24.04:account:acct-1');
-    assert.deepEqual(vault.probe(), { supported: true, backend: 'wsl-wincred', reason: '' });
-
-    // Save active WSL files into Windows Credential Manager over stdin with WSLENV set
-    const saved = vault.saveActiveTo('acct-alpha');
-    assert.equal(saved.ok, true);
-    assert.equal(winStore.has('agy-powertools:wsl:Ubuntu-24.04:account:acct-alpha'), true);
-    const writeCall = spawnCalls.find(c => c.env.AGY_CRED_OP === 'write');
-    assert.equal(writeCall.cmd, 'powershell.exe');
-    assert.ok(writeCall.env.WSLENV.includes('AGY_CRED_OP'));
-    assert.ok(writeCall.env.WSLENV.includes('AGY_CRED_DST'));
-    assert.equal(writeCall.args.join(' ').includes('oauth-token-alpha'), false);
-
-    // Overwrite active WSL files as if user logged into account beta, then restore alpha atomically
-    writeFileSync(tokenPath, 'oauth-token-beta\n', 'utf8');
-    writeFileSync(scopePath, 'scope-beta', 'utf8');
-    const restored = vault.restoreToActive('acct-alpha');
-    assert.equal(restored.ok, true);
-    assert.equal(readFileSync(tokenPath, 'utf8'), 'oauth-token-alpha\n');
-    assert.equal(readFileSync(scopePath, 'utf8'), 'scope-alpha');
-
-    // WSL2 hybrid vault blocks mismatched expectedEmail on both saveActiveTo and restoreToActive
-    const betaJson = JSON.stringify({ token: { access_token: 'a' }, id_token_email: 'beta@example.com' });
-    writeFileSync(tokenPath, betaJson, 'utf8');
-    assert.equal(vault.inspectActive().email, 'beta@example.com');
-    const wslMismatchSave = vault.saveActiveTo('acct-alpha', { expectedEmail: 'alpha@example.com' });
-    assert.equal(wslMismatchSave.ok, false);
-    assert.equal(wslMismatchSave.mismatch, true);
-    assert.equal(wslMismatchSave.actualEmail, 'beta@example.com');
-    assert.equal(vault.saveActiveTo('acct-beta', { expectedEmail: 'beta@example.com' }).ok, true);
-    const wslMismatchRestore = vault.restoreToActive('acct-beta', { expectedEmail: 'alpha@example.com' });
-    assert.equal(wslMismatchRestore.ok, false);
-    assert.equal(wslMismatchRestore.mismatch, true);
-
-    // Headless Linux without secret-tool reports clear probe failure and error reason
-    const headlessVault = createCredentialVault({
-      platform: 'linux',
-      env: {},
-      wsl: false,
-      runSpawn: () => ({ status: null, error: Object.assign(new Error('spawn secret-tool ENOENT'), { code: 'ENOENT' }) })
-    });
-    const probeRes = headlessVault.probe();
-    assert.equal(probeRes.supported, false);
-    assert.ok(probeRes.reason.includes('secret-tool'));
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('accounts store surfaces vault error details on prepareAdd and degrades gracefully to manualRestartRequired on relaunch failure', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'agy-wsl-acct-'));
-  try {
-    // 1. prepareAdd surfaces real vault saveActiveTo error reason
-    const failingVault = {
-      supported: true,
-      probe: () => ({ supported: true, reason: '' }),
-      saveActiveTo: () => ({ ok: false, error: '未检测到 WSL2 登录凭据文件' }),
-      hasSaved: () => false
-    };
-    const storeFail = createAccountsStore(dir, { vault: failingVault });
-    storeFail.syncActive({ email: 'alpha@example.com', name: 'Alpha' });
-    assert.throws(() => storeFail.prepareAdd(), /未检测到 WSL2 登录凭据文件/);
-
-    // 2. switchAccount succeeds with manualRestartRequired when relaunch throws after credential restore
-    const slots = new Map();
-    let activeToken = 'tok-A';
-    const workingVault = {
-      supported: true,
-      probe: () => ({ supported: true, reason: '' }),
-      saveActiveTo(id) { slots.set(id, activeToken); return { ok: true, hash: `H-${activeToken}` }; },
-      restoreToActive(id) { activeToken = slots.get(id); return { ok: true, hash: `H-${activeToken}` }; },
-      hasSaved: id => slots.has(id),
-      inspectSaved: id => ({ exists: slots.has(id), hash: slots.has(id) ? `H-${slots.get(id)}` : '' }),
-      removeSaved: id => { slots.delete(id); return { ok: true }; }
-    };
-    const store = createAccountsStore(join(dir, 'ok'), {
-      vault: workingVault,
-      relaunch: () => { throw new Error('未找到 Antigravity 启动程序'); }
-    });
-    store.syncActive({ email: 'alpha@example.com', name: 'Alpha' });
-    store.prepareAdd();
-    activeToken = 'tok-B';
-    store.syncActive({ email: 'beta@example.com', name: 'Beta' });
-    const alphaId = store.list().accounts.find(a => a.email === 'alpha@example.com').id;
-
-    const switched = store.switchAccount(alphaId, { triggerRelaunch: true });
-    assert.equal(switched.ok, true);
-    assert.equal(switched.relaunching, false);
-    assert.equal(switched.manualRestartRequired, true);
-    assert.ok(switched.relaunchError.includes('Antigravity'));
-    assert.equal(activeToken, 'tok-A');
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 

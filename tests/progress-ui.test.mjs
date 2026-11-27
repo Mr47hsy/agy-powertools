@@ -3,15 +3,15 @@ function render(status,tasks=[]){
  const R={createElement:(type,props,...children)=>({type,props:props||{},children}),useSyncExternalStore:(_,snapshot)=>snapshot()};
  const context=vm.createContext({React:R,dq:'icon',document:{createElement:()=>({dataset:{},remove(){}}),head:{append(){}}}});
  vm.runInContext(readFileSync(new URL('../lib/native-panels.js',import.meta.url),'utf8'),context);
- const panels=context.__agyPanels({t:v=>v,options:()=>({progress:true,language:'en'}),state:()=>({conversationId:'test',progress:{status,tasks}}),subscribe:()=>()=>{},revision:()=>0});
+ const panels=context.__agyPanels({t:v=>v,options:()=>({progress:true}),state:()=>({conversationId:'test',progress:{status,tasks}}),subscribe:()=>()=>{},revision:()=>0});
  function text(node){if(typeof node==='string')return node;if(Array.isArray(node))return node.map(text).join(' ');return node&&typeof node==='object'?text(node.children):'';}
  return text(panels.Progress());
 }
 test('progress distinguishes active, failed, stopped and stopping states even when a checklist is complete',()=>{
  const done=[{title:'Example task',status:'complete'}];
  assert.ok(render('running',done).includes('进行中'));assert.ok(render('error',done).includes('错误'));
- assert.ok(render('stopped',done).includes('Stopped'));assert.ok(!render('stopped',done).includes('已完成'));
- assert.ok(render('canceling').includes('Stopping'));assert.ok(render('stopped').includes('Stopped'));
+ assert.ok(render('stopped',done).includes('已停止'));assert.ok(!render('stopped',done).includes('已完成'));
+ assert.ok(render('canceling').includes('正在停止'));assert.ok(render('stopped').includes('已停止'));
 });
 
 test('progress integrates live phase into header, renders connected activity trail with step durations, and omits filler captions', () => {
@@ -180,11 +180,8 @@ test('progress renders subagent and background phases in expanded and collapsed 
   assert.ok(collapsedSubZh.includes('子智能体 1:15'));
   assert.equal(collapsedSubZh.includes('\u00b7'), false);
 
-  const collapsedBgEn = renderWith({ status: 'running', phase: 'background', elapsedMs: 30000 }, 'en', false);
-  assert.ok(collapsedBgEn.includes('Background 0:30'));
-
-  const singleEn = renderWith({ status: 'running', phase: 'subagent', activeSubagentCount: 1, phaseDetail: 'UI Verification', elapsedMs: 75000 }, 'en', true);
-  assert.ok(singleEn.includes('Subagent running: UI Verification'));
+  const collapsedBgZh = renderWith({ status: 'running', phase: 'background', elapsedMs: 30000 }, 'zh-CN', false);
+  assert.ok(collapsedBgZh.includes('后台任务 0:30'));
 });
 
 test('ProgressOrb maps live phases and tool kinds to distinct orb modes and preserves progressbar semantics without raw title', () => {
