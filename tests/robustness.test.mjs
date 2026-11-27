@@ -497,3 +497,142 @@ test('pure-JS Lexical & Protobuf fallbacks allow attachFileToComposer and beginE
   adapter.cancelEdit();
   adapter.dispose();
 });
+
+test('Antigravity 2.35.2 regression: Pass-1 exact matchers disambiguate decoy wrappers and accept React.forwardRef / React.memo components', () => {
+  const bindingsCode = readFileSync(new URL('../lib/native-bindings.js', import.meta.url), 'utf8');
+  const fwd = render => ({ $$typeof: Symbol.for('react.forward_ref'), render });
+  const memo = type => ({ $$typeof: Symbol.for('react.memo'), type });
+
+  const nativeHC = new Function('return ({defaultOpen:a,matchTriggerWidth:b,disableMobileSheet:c}) => [a,b,c]')();
+  const nativeIC = fwd(new Function('return ({startDragTracking:a,asChild:b}) => "popover-trigger-element"')());
+  const nativeJC = fwd(new Function('return ({arrowNavigable:a,matchTriggerWidth:b,scrollContainerClassName:c}) => [a,b,c]')());
+  const nativeKC = memo(fwd(new Function('return ({asChild:a,isMobile:b,setIsOpen:c}) => [a,b,c]')()));
+  const nativeGC = new Function('return ({tooltipPlace:a,secondaryAction:b}) => "main-row-trigger"')();
+  const nativeUy = fwd(new Function('return ({paddingClassName:a,computedAriaLabel:b,asChild:c}) => [a,b,c]')());
+  const nativeDq = memo(new Function('return ({name:a,size:b}) => "google-symbols Icon"')());
+
+  // Decoy wrappers present in 2.35.2 bundle that would collide if Pass-1 exact matchers were loosened:
+  const decoyDq = new Function('return ({size:b,name:a}) => "google-symbols Icon wrapper"')();
+  const decoyIC = new Function('return ({asChild:b}) => "popover-trigger-element wrapper without drag"')();
+  const decoyKC = new Function(`return ({asChild:a,isMobile:b,setIsOpen:c}) => "${'x'.repeat(960)}"`)();
+
+  const ctx = vm.createContext({
+    React: {
+      createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+      Fragment: 'fragment',
+      createContext: v => ({ Provider: ({ children }) => children, _v: v })
+    },
+    nativeHC,
+    nativeIC,
+    nativeJC,
+    nativeKC,
+    nativeGC,
+    nativeUy,
+    nativeDq,
+    decoyDq,
+    decoyIC,
+    decoyKC
+  });
+
+  vm.runInContext(bindingsCode, ctx);
+  const { bindings, degraded } = ctx.__agyResolveNativeBindings([]);
+
+  assert.equal(bindings.HC, nativeHC, 'HC matched native component');
+  assert.equal(bindings.IC, nativeIC, 'IC accepted React.forwardRef object and disambiguated decoyIC');
+  assert.equal(bindings.JC, nativeJC, 'JC accepted React.forwardRef object');
+  assert.equal(bindings.KC, nativeKC, 'KC accepted React.memo(forwardRef) and disambiguated >900-char decoyKC');
+  assert.equal(bindings.GC, nativeGC, 'GC matched native menu item');
+  assert.equal(bindings.Uy, nativeUy, 'Uy accepted React.forwardRef button');
+  assert.equal(bindings.dq, nativeDq, 'dq accepted React.memo icon and disambiguated ({size,name}) decoyDq');
+  for (const key of ['HC', 'IC', 'JC', 'KC', 'GC', 'Uy', 'dq']) {
+    assert.equal(degraded.includes(key), false, `${key} must not be marked degraded on 2.35.2`);
+  }
+});
+
+test('FallbackIC/FallbackJC position popovers accurately when wrapping plain function components (no -9999 offscreen bug) and FallbackDq renders pure SVG', () => {
+  const bindingsCode = readFileSync(new URL('../lib/native-bindings.js', import.meta.url), 'utf8');
+
+  // Stateful mini-React harness to test click -> open -> FallbackJC coordinate calculation
+  const states = [];
+  const refs = [];
+  let hookIdx = 0;
+  let activeCtxValue = null;
+  const PopoverContext = {
+    Provider({ value, children }) {
+      activeCtxValue = value;
+      return { type: 'Provider', props: { value }, children: Array.isArray(children) ? children : [children] };
+    }
+  };
+  const React = {
+    Fragment: 'fragment',
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    createContext: () => PopoverContext,
+    useContext: () => activeCtxValue,
+    useState(init) {
+      const idx = hookIdx++;
+      if (!(idx in states)) states[idx] = typeof init === 'function' ? init() : init;
+      return [states[idx], next => { states[idx] = typeof next === 'function' ? next(states[idx]) : next; }];
+    },
+    useRef(init) {
+      const idx = hookIdx++;
+      if (!(idx in refs)) refs[idx] = { current: init };
+      return refs[idx];
+    },
+    useEffect() {},
+    useLayoutEffect() {},
+    isValidElement: el => Boolean(el && typeof el === 'object' && 'props' in el),
+    cloneElement: (el, nextProps) => ({ ...el, props: { ...el.props, ...nextProps } })
+  };
+
+  const ctx = vm.createContext({
+    React,
+    innerWidth: 1280,
+    innerHeight: 800
+  });
+  vm.runInContext(bindingsCode, ctx);
+  const fb = ctx.__agyCreateFallbackBindings(React);
+
+  // 1. FallbackDq renders inline <svg> with zero raw ligature text (prevents "more_horiz" text overflow)
+  const moreIcon = fb.dq({ name: 'more_horiz', size: 16 });
+  assert.equal(moreIcon.type, 'svg');
+  assert.equal(JSON.stringify(moreIcon).includes('more_horiz'), false, 'more_horiz must never appear as text children');
+  const unknownIcon = fb.dq({ name: 'unknown_future_ligature', size: 16 });
+  assert.equal(unknownIcon.type, 'svg');
+  assert.equal(JSON.stringify(unknownIcon).includes('unknown_future_ligature'), false);
+
+  // 2. Plain function component child (drops `ref`, just like React 18 function components) inside FallbackIC(asChild)
+  function PlainFunctionButton(props) {
+    return React.createElement('button', { type: 'button', onClick: props.onClick }, props.children);
+  }
+
+  const renderPopoverTree = () => {
+    hookIdx = 0;
+    const root = fb.HC({
+      placement: 'top-end',
+      children: []
+    });
+    root.type(root.props);
+    const triggerTree = fb.IC({ asChild: true, children: React.createElement(PlainFunctionButton, null, '29.9%') });
+    const contentTree = fb.JC({ children: 'Token Popover Body' });
+    return { root, triggerTree, contentTree };
+  };
+
+  const initial = renderPopoverTree();
+  assert.equal(initial.contentTree, null, 'closed before click');
+  assert.equal(initial.triggerTree.type, 'span', 'FallbackIC wraps non-intrinsic function components in a DOM span');
+  assert.equal(initial.triggerTree.props['data-slot'], 'popover-trigger-element');
+
+  // Simulate user clicking the 29.9% ContextRing button near bottom composer bar (x=420, y=730)
+  const fakeButtonDom = {
+    getBoundingClientRect: () => ({ left: 420, right: 484, top: 730, bottom: 758, width: 64, height: 28 })
+  };
+  const clonedChild = initial.triggerTree.children[0];
+  clonedChild.props.onClick({ currentTarget: fakeButtonDom, target: fakeButtonDom, defaultPrevented: false });
+
+  const opened = renderPopoverTree();
+  assert.ok(opened.contentTree, 'popover opens after clicking function-component trigger');
+  assert.notEqual(opened.contentTree.props.style.left, -9999, 'popover left must never be -9999 offscreen');
+  assert.notEqual(opened.contentTree.props.style.top, -9999, 'popover top must never be -9999 offscreen');
+  assert.ok(opened.contentTree.props.style.left >= 8 && opened.contentTree.props.style.left <= 1000);
+  assert.ok(opened.contentTree.props.style.top >= 8 && opened.contentTree.props.style.top <= 730);
+});
